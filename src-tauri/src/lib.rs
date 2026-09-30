@@ -1,4 +1,4 @@
-mod application;
+pub mod application;
 mod commands;
 pub mod domain;
 pub mod error;

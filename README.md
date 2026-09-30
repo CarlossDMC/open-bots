@@ -236,6 +236,26 @@ cargo check --all-targets --all-features
 
 GitHub Actions runs the same checks on pushes and pull requests. Dependency audit results and accepted transitive warnings are recorded in [docs/dependency-audit.md](docs/dependency-audit.md).
 
+## Desktop builds
+
+The `Desktop Builds` GitHub Actions workflow creates installable bundles for:
+
+- Linux x86_64;
+- Windows x86_64;
+- macOS Apple Silicon;
+- macOS Intel.
+
+Run it manually from the Actions tab to download workflow artifacts without creating a release. Pushing a version tag creates or updates a draft GitHub release and attaches the native bundles:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Release versions must remain aligned across `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` before the tag is pushed.
+
+The generated builds are currently unsigned except for ad-hoc macOS signing. Windows may display a SmartScreen warning, and macOS does not receive Apple notarization. Production signing and notarization will be configured only when release credentials are available.
+
 ## Roadmap
 
 ### Foundation — current
