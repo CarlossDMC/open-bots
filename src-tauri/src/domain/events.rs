@@ -1,0 +1,89 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainEvent {
+    pub id: Uuid,
+    pub event_type: EventType,
+    pub aggregate_id: Option<Uuid>,
+    pub payload: Value,
+    pub occurred_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum EventType {
+    #[serde(rename = "agent.created")]
+    AgentCreated,
+    #[serde(rename = "agent.started")]
+    AgentStarted,
+    #[serde(rename = "agent.paused")]
+    AgentPaused,
+    #[serde(rename = "agent.resumed")]
+    AgentResumed,
+    #[serde(rename = "agent.waiting")]
+    AgentWaiting,
+    #[serde(rename = "agent.failed")]
+    AgentFailed,
+    #[serde(rename = "agent.completed")]
+    AgentCompleted,
+    #[serde(rename = "task.created")]
+    TaskCreated,
+    #[serde(rename = "task.assigned")]
+    TaskAssigned,
+    #[serde(rename = "task.started")]
+    TaskStarted,
+    #[serde(rename = "task.completed")]
+    TaskCompleted,
+    #[serde(rename = "task.failed")]
+    TaskFailed,
+    #[serde(rename = "agent.message")]
+    AgentMessage,
+    #[serde(rename = "tool.requested")]
+    ToolRequested,
+    #[serde(rename = "tool.started")]
+    ToolStarted,
+    #[serde(rename = "tool.completed")]
+    ToolCompleted,
+    #[serde(rename = "tool.failed")]
+    ToolFailed,
+    #[serde(rename = "artifact.created")]
+    ArtifactCreated,
+    #[serde(rename = "approval.requested")]
+    ApprovalRequested,
+    #[serde(rename = "approval.approved")]
+    ApprovalApproved,
+    #[serde(rename = "approval.denied")]
+    ApprovalDenied,
+    #[serde(rename = "process.started")]
+    ProcessStarted,
+    #[serde(rename = "process.completed")]
+    ProcessCompleted,
+    #[serde(rename = "process.failed")]
+    ProcessFailed,
+}
+
+impl DomainEvent {
+    pub fn new(event_type: EventType, aggregate_id: Option<Uuid>, payload: Value) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            event_type,
+            aggregate_id,
+            payload,
+            occurred_at: Utc::now(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessage {
+    pub from_agent_id: Uuid,
+    pub to_agent_id: Uuid,
+    pub message: String,
+    pub artifact_ids: Vec<Uuid>,
+    pub task_id: Option<Uuid>,
+    pub requests_action: bool,
+}

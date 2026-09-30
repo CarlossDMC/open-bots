@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --background: 240 6% 4%;
+    --foreground: 240 5% 90%;
+    --card: 240 5% 6%;
+    --border: 240 4% 14%;
+    --muted: 240 4% 11%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 240 4% 16%;
+    --accent-foreground: 240 5% 96%;
+  }
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    @apply min-h-full;
+  }
+  body {
+    @apply m-0 bg-background font-sans text-foreground antialiased;
+  }
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+  ::selection {
+    @apply bg-indigo-400/25 text-indigo-100;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-lg border border-zinc-800/80 bg-zinc-950/35 p-4;
+  }
+  .section-title {
+    @apply mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-zinc-500;
+  }
+  .label {
+    @apply text-[11px] font-medium uppercase tracking-wider text-zinc-600;
+  }
+  .detail-grid {
+    @apply grid grid-cols-2 gap-x-8 gap-y-5;
+  }
+  .field-textarea,
+  .field-select {
+    @apply w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700;
+  }
+  .field-select {
+    @apply h-9 py-0;
+  }
+  .table-shell {
+    @apply overflow-hidden rounded-lg border border-zinc-800/80;
+  }
+  .table-header,
+  .table-row {
+    @apply grid items-center gap-4 border-b border-zinc-900 px-4;
+  }
+  .table-header {
+    @apply bg-zinc-950/70 py-2.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600;
+  }
+  .table-row {
+    @apply min-h-16 bg-zinc-950/30 py-3 last:border-0 hover:bg-zinc-900/40;
+  }
+}
