@@ -23,7 +23,10 @@ pub struct AppState {
 
 pub fn run() {
     initialize_logging();
-    tauri::Builder::default()
+    let builder = tauri::Builder::default().plugin(tauri_plugin_process::init());
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    builder
         .setup(|app| {
             let data_directory = app
                 .path()

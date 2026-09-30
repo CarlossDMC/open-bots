@@ -37,5 +37,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE5QkI0MDUwRDQ5MzU3RDYKUldUV1Y1UFVVRUM3R1VJaitDNkxmRjJGQTVhUWdjb016S2tvNDhNNXRmaTZSQ1Boem11aFZ2ZVQK",
+      "endpoints": ["https://github.com/CarlossDMC/open-bots/releases/latest/download/latest.json"],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

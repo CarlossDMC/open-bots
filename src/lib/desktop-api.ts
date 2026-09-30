@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { demoAgents, demoProviders } from "@/lib/demo-data";
 import type { Agent, NewAgentInput, ProviderSummary } from "@/types/domain";
 
-function isTauriRuntime(): boolean {
+export function isTauriRuntime(): boolean {
   return "__TAURI_INTERNALS__" in window;
 }
 

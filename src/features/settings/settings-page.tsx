@@ -1,8 +1,16 @@
-import { Database, Monitor, Puzzle, SlidersHorizontal } from "lucide-react";
+import { Database, Download, Monitor, Puzzle, SlidersHorizontal } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { UpdateSettings } from "@/features/updates/update-settings";
+import type { AppUpdater } from "@/hooks/use-app-updater";
 import type { ProviderSummary } from "@/types/domain";
 
-export function SettingsPage({ providers }: { providers: ProviderSummary[] }) {
+export function SettingsPage({
+  providers,
+  updater
+}: {
+  providers: ProviderSummary[];
+  updater: AppUpdater;
+}) {
   return (
     <div className="animate-fade-in">
       <header className="mb-7">
@@ -47,6 +55,9 @@ export function SettingsPage({ providers }: { providers: ProviderSummary[] }) {
         <SettingsCard icon={Database} title="Data">
           <Row name="Storage" value="Local SQLite" />
           <Row name="Cloud sync" value="Not implemented" />
+        </SettingsCard>
+        <SettingsCard icon={Download} title="Updates">
+          <UpdateSettings updater={updater} />
         </SettingsCard>
       </div>
     </div>

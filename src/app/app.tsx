@@ -8,6 +8,8 @@ import { NewAgentDialog } from "@/features/agents/new-agent-dialog";
 import { ApprovalsPage } from "@/features/approvals/approvals-page";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { TasksPage } from "@/features/tasks/tasks-page";
+import { UpdateBanner } from "@/features/updates/update-banner";
+import { useAppUpdater } from "@/hooks/use-app-updater";
 import { createAgent, listAgents, listProviders } from "@/lib/desktop-api";
 import { demoApprovals, demoEvents, demoProviders, demoTasks } from "@/lib/demo-data";
 import type { Agent, ApprovalRequest, NewAgentInput, ProviderSummary } from "@/types/domain";
@@ -24,6 +26,7 @@ export function App() {
   const [creating, setCreating] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>(demoApprovals);
+  const updater = useAppUpdater();
 
   const load = useCallback(async () => {
     try {
@@ -103,12 +106,13 @@ export function App() {
   else if (view === "activity") content = <ActivityPage events={demoEvents} />;
   else if (view === "approvals")
     content = <ApprovalsPage approvals={approvals} onResolve={resolveApproval} />;
-  else content = <SettingsPage providers={providers} />;
+  else content = <SettingsPage providers={providers} updater={updater} />;
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <Sidebar active={view} onNavigate={navigate} onOpenPalette={() => setPaletteOpen(true)} />
       <main className="min-w-0 flex-1 overflow-y-auto">
+        <UpdateBanner updater={updater} />
         <div className="mx-auto max-w-6xl px-8 py-8">{content}</div>
       </main>
       <NewAgentDialog

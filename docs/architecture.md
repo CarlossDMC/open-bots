@@ -44,6 +44,10 @@ SQLite stores application state. SQL is restricted to repository implementations
 
 Process, output streaming, cancellation, Git, PTY, and scheduler capabilities live behind interfaces. Implementations must publish completion events instead of forcing an agent to poll while a long-running job executes.
 
+### Application updates
+
+The Tauri updater plugin checks a signed release manifest on GitHub and installs updates after user confirmation. It is distribution infrastructure and does not interact with agents, providers, or the runtime. See [ADR 0004](adr/0004-signed-self-updates.md).
+
 ## Dependency direction
 
 ```text

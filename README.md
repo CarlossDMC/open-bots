@@ -256,6 +256,21 @@ Release versions must remain aligned across `package.json`, `src-tauri/Cargo.tom
 
 The generated builds are currently unsigned except for ad-hoc macOS signing. Windows may display a SmartScreen warning, and macOS does not receive Apple notarization. Production signing and notarization will be configured only when release credentials are available.
 
+### Automatic updates
+
+Installed builds check for a newer release on launch and from **Settings → Updates**. When one is found, a banner offers to download it, verify its signature, install it, and restart. The check sends a single request to the latest GitHub release's `latest.json`; failures are shown in Settings and never block local use. The launch check can be turned off in Settings, and the browser UI preview does not check for updates.
+
+Update artifacts are signed with a Tauri updater key, separate from OS code signing. The release workflow needs these repository secrets:
+
+- `TAURI_SIGNING_PRIVATE_KEY`: the private key content matching the `pubkey` in `src-tauri/tauri.conf.json`;
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: its password.
+
+Updater artifacts are only produced by the release workflow (`src-tauri/tauri.release.conf.json`), so local `tauri build` runs do not need the key. Clients only see a release after its draft is published, because the endpoint follows GitHub's latest published release.
+
+Supported update targets: Windows (NSIS and MSI, installed passively), macOS (`.app` bundles), and Linux AppImage. `.deb` and `.rpm` installs cannot self-update and must be upgraded through the package manager. End-to-end updates have not been verified yet, including on ad-hoc signed macOS builds.
+
+Losing the private key means existing installations can no longer verify new updates, so keep a backup.
+
 ## Roadmap
 
 ### Foundation — current
