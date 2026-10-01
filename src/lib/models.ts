@@ -4,6 +4,10 @@ export function supportsModelSelection(provider?: ProviderSummary): boolean {
   return provider?.capabilities.includes(providerCapabilities.modelSelection) ?? false;
 }
 
+export function supportsConfiguredMcpServers(provider?: ProviderSummary): boolean {
+  return provider?.capabilities.includes(providerCapabilities.configuredMcpServers) ?? false;
+}
+
 /** Short model label such as "gpt-5.5 · high", or the provider default. */
 export function describeModel(agent: Pick<Agent, "model" | "reasoningEffort">): string {
   if (!agent.model) return "Provider default";

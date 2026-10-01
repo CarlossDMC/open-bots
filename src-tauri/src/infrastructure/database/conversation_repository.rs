@@ -40,7 +40,7 @@ impl ConversationRepository for SqliteConversationRepository {
             .map_err(|_| AppError::Validation("message limit is too large".into()))?;
         self.database.with_connection(|connection| {
             let mut statement = connection.prepare(
-                "SELECT id, agent_id, role, content, created_at_ms FROM ( \
+                "SELECT id, agent_id, role, content, created_at_ms, source_agent_id FROM ( \
                    SELECT * FROM conversation_messages WHERE agent_id = ?1 \
                    ORDER BY created_at_ms DESC, sequence DESC LIMIT ?2 \
                  ) ORDER BY created_at_ms, sequence",
@@ -55,15 +55,16 @@ impl ConversationRepository for SqliteConversationRepository {
     fn append_message(&self, message: &ConversationMessage) -> AppResult<()> {
         self.database.with_connection(|connection| {
             connection.execute(
-                "INSERT INTO conversation_messages (id, agent_id, role, content, created_at_ms, sequence) \
+                "INSERT INTO conversation_messages (id, agent_id, role, content, created_at_ms, sequence, source_agent_id) \
                  VALUES (?1, ?2, ?3, ?4, ?5, \
-                   (SELECT COALESCE(MAX(sequence), 0) + 1 FROM conversation_messages WHERE agent_id = ?2))",
+                   (SELECT COALESCE(MAX(sequence), 0) + 1 FROM conversation_messages WHERE agent_id = ?2), ?6)",
                 params![
                     message.id.to_string(),
                     message.agent_id.to_string(),
                     serde_json::to_string(&message.role)?.trim_matches('"'),
                     message.content,
                     message.created_at.timestamp_millis(),
+                    message.source_agent_id.map(|id| id.to_string()),
                 ],
             )?;
             Ok(())
@@ -112,6 +113,7 @@ fn map_message(row: &Row<'_>) -> rusqlite::Result<ConversationMessage> {
     Ok(ConversationMessage {
         id: parse(row.get::<_, String>(0)?)?,
         agent_id: parse(row.get::<_, String>(1)?)?,
+        source_agent_id: row.get::<_, Option<String>>(5)?.map(parse).transpose()?,
         role: serde_json::from_str(&format!("\"{role}\"")).map_err(to_sql_error)?,
         content: row.get(3)?,
         created_at: DateTime::from_timestamp_millis(created_at_ms)
@@ -173,7 +175,8 @@ mod tests {
         let first = message(&agent, MessageRole::User, "one");
         let mut second = message(&agent, MessageRole::Agent, "two");
         second.created_at = first.created_at;
-        let third = message(&agent, MessageRole::System, "three");
+        let mut third = message(&agent, MessageRole::System, "three");
+        third.source_agent_id = Some(agent.id);
         for message in [&first, &second, &third] {
             repository.append_message(message).expect("append");
         }

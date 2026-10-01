@@ -514,6 +514,7 @@ mod tests {
             model: None,
             reasoning_effort: None,
             runtime_tools: None,
+            mcp_servers: Vec::new(),
         }
     }
 

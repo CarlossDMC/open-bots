@@ -189,6 +189,7 @@ pub fn run() {
             commands::list_provider_models,
             commands::read_provider_usage,
             commands::update_agent_model,
+            commands::update_agent_mcp_servers,
             commands::list_events,
             commands::list_approvals,
             commands::resolve_approval,

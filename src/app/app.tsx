@@ -206,6 +206,7 @@ export function App() {
           <AgentConversation
             key={selectedAgent.id}
             agent={selectedAgent}
+            agents={agents}
             provider={providers.find((provider) => provider.id === selectedAgent.providerId)}
             onAgentUpdated={replaceAgent}
           />

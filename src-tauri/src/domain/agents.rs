@@ -20,6 +20,8 @@ pub struct Agent {
     pub permissions: AgentPermissions,
     #[serde(flatten)]
     pub model_selection: ModelSelection,
+    #[serde(default)]
+    pub mcp_servers: McpServerSelection,
     pub current_task: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -76,6 +78,75 @@ impl ModelSelection {
 
     pub fn is_provider_default(&self) -> bool {
         self.model.is_none()
+    }
+}
+
+/// Most MCP servers an agent may use from its provider's own configuration.
+const MAX_MCP_SERVERS: usize = 32;
+/// Longest MCP server name accepted.
+const MAX_MCP_SERVER_NAME_LENGTH: usize = 128;
+
+/// MCP servers from the provider's own configuration that the agent may use during a turn,
+/// by the names the provider reports (for example `github` or `claude.ai Atlassian`). Every
+/// tool of a listed server runs without an approval prompt, including tools that write to
+/// external services. Empty keeps the agent to Open Bots runtime tools only.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(try_from = "Vec<String>", into = "Vec<String>")]
+pub struct McpServerSelection(Vec<String>);
+
+impl McpServerSelection {
+    pub fn new(names: Vec<String>) -> DomainResult<Self> {
+        let mut servers: Vec<String> = Vec::new();
+        for name in names {
+            let name = name.trim().to_owned();
+            if name.is_empty() || servers.contains(&name) {
+                continue;
+            }
+            if name.len() > MAX_MCP_SERVER_NAME_LENGTH {
+                return Err(DomainError::Validation(format!(
+                    "MCP server names must contain at most {MAX_MCP_SERVER_NAME_LENGTH} characters"
+                )));
+            }
+            // Names reach provider command lines, so only configuration-style characters pass.
+            if !name
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || " ._-".contains(character))
+            {
+                return Err(DomainError::Validation(
+                    "MCP server names may only contain letters, digits, spaces, '.', '_' and '-'"
+                        .into(),
+                ));
+            }
+            servers.push(name);
+        }
+        if servers.len() > MAX_MCP_SERVERS {
+            return Err(DomainError::Validation(format!(
+                "an agent may use at most {MAX_MCP_SERVERS} MCP servers"
+            )));
+        }
+        Ok(Self(servers))
+    }
+
+    pub fn names(&self) -> &[String] {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl TryFrom<Vec<String>> for McpServerSelection {
+    type Error = DomainError;
+
+    fn try_from(names: Vec<String>) -> DomainResult<Self> {
+        Self::new(names)
+    }
+}
+
+impl From<McpServerSelection> for Vec<String> {
+    fn from(selection: McpServerSelection) -> Self {
+        selection.0
     }
 }
 
@@ -215,6 +286,7 @@ impl Agent {
             instructions: input.instructions.trim().into(),
             permissions: AgentPermissions::default(),
             model_selection,
+            mcp_servers: McpServerSelection::default(),
             current_task: None,
             created_at: now,
             updated_at: now,
@@ -229,6 +301,18 @@ impl Agent {
             ));
         }
         self.model_selection = selection;
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    /// Like the model, the servers a running turn started with stay until it ends.
+    pub fn change_mcp_servers(&mut self, servers: McpServerSelection) -> DomainResult<()> {
+        if self.status == AgentStatus::Working {
+            return Err(DomainError::Validation(
+                "MCP servers cannot change while the agent is working".into(),
+            ));
+        }
+        self.mcp_servers = servers;
         self.updated_at = Utc::now();
         Ok(())
     }
@@ -363,5 +447,34 @@ mod tests {
         assert_eq!(agent.model_selection, selection);
         agent.transition_to(AgentStatus::Working).expect("start");
         assert!(agent.change_model(ModelSelection::default()).is_err());
+    }
+    #[test]
+    fn normalizes_and_validates_mcp_server_selections() {
+        let selection = McpServerSelection::new(vec![
+            " claude.ai Atlassian ".into(),
+            String::new(),
+            "github".into(),
+            "github".into(),
+        ])
+        .expect("valid selection");
+        assert_eq!(selection.names(), ["claude.ai Atlassian", "github"]);
+        assert!(McpServerSelection::new(vec!["git\"hub".into()]).is_err());
+        assert!(McpServerSelection::new(vec!["a".repeat(129)]).is_err());
+        assert!(
+            McpServerSelection::new((0..33).map(|index| format!("s{index}")).collect()).is_err()
+        );
+        assert!(serde_json::from_str::<McpServerSelection>(r#"["bad;name"]"#).is_err());
+    }
+    #[test]
+    fn keeps_mcp_servers_while_working() {
+        let mut agent = Agent::create(input()).expect("valid agent");
+        assert!(agent.mcp_servers.is_empty());
+        let selection = McpServerSelection::new(vec!["github".into()]).expect("selection");
+        agent.change_mcp_servers(selection.clone()).expect("change");
+        assert_eq!(agent.mcp_servers, selection);
+        agent.transition_to(AgentStatus::Working).expect("start");
+        assert!(agent
+            .change_mcp_servers(McpServerSelection::default())
+            .is_err());
     }
 }

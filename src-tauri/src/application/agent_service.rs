@@ -6,7 +6,7 @@ use uuid::Uuid;
 use super::provider_service::require;
 use crate::{
     domain::{
-        agents::{Agent, ModelSelection, NewAgent},
+        agents::{Agent, McpServerSelection, ModelSelection, NewAgent},
         events::{DomainEvent, EventType},
     },
     error::{AppError, AppResult},
@@ -99,6 +99,38 @@ impl AgentService {
         tracing::info!(agent_id = %agent.id, "agent model updated");
         Ok(agent)
     }
+
+    /// Applies from the agent's next turn; the provider session is kept.
+    pub fn update_mcp_servers(&self, agent_id: Uuid, servers: Vec<String>) -> AppResult<Agent> {
+        let selection = McpServerSelection::new(servers)?;
+        let mut agent = self
+            .agents
+            .find(agent_id)?
+            .ok_or_else(|| AppError::NotFound(format!("agent {agent_id}")))?;
+        if !selection.is_empty() {
+            let provider = self.providers.get(&agent.provider_id)?;
+            require(
+                provider.as_ref(),
+                ProviderCapability::ConfiguredMcpServers,
+                "configured MCP servers",
+            )?;
+        }
+        agent.change_mcp_servers(selection)?;
+        self.agents.save(&agent)?;
+        let event = DomainEvent::new(
+            EventType::AgentUpdated,
+            Some(agent.id),
+            json!({ "name": agent.name, "mcpServers": agent.mcp_servers }),
+        );
+        self.events.append(&event)?;
+        self.event_bus.publish(event);
+        tracing::info!(
+            agent_id = %agent.id,
+            servers = agent.mcp_servers.names().len(),
+            "agent MCP servers updated"
+        );
+        Ok(agent)
+    }
 }
 
 #[cfg(test)]
@@ -152,6 +184,20 @@ mod tests {
             service.update_model(agent.id, Some("gpt-5.5".into()), None),
             Err(AppError::Unsupported(_))
         ));
+    }
+
+    #[test]
+    fn rejects_mcp_servers_for_providers_without_configured_servers() {
+        let (service, _) = service();
+        let agent = service.create(new_agent(None)).expect("agent");
+        assert!(matches!(
+            service.update_mcp_servers(agent.id, vec!["github".into()]),
+            Err(AppError::Unsupported(_))
+        ));
+        let cleared = service
+            .update_mcp_servers(agent.id, Vec::new())
+            .expect("clearing is always allowed");
+        assert!(cleared.mcp_servers.is_empty());
     }
 
     #[test]

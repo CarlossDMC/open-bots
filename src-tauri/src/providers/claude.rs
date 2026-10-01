@@ -21,6 +21,18 @@
 //! - Runtime tools: `--mcp-config <json> --strict-mcp-config` registers only the Open Bots
 //!   HTTP MCP server, with `Authorization: Bearer ${OPEN_BOTS_MCP_TOKEN}` expanded by the CLI
 //!   from the environment, and `mcp__open_bots` in `--allowed-tools` pre-approves its tools.
+//! - Configured MCP servers: when the agent selects servers from the user's own Claude Code
+//!   configuration (user, project and claude.ai connectors, as `claude mcp list` names them),
+//!   `--strict-mcp-config` is left out so those servers load next to Open Bots, and each
+//!   selected server gets `mcp__<server>__*` in `--allowed-tools`, the documented per-server
+//!   wildcard. A bare `mcp__*` was verified not to pre-approve anything. Tool names replace
+//!   characters outside `[A-Za-z0-9_-]` with `_`, so `claude.ai Atlassian` becomes
+//!   `mcp__claude_ai_Atlassian__<tool>`. Servers that are not selected still load but every
+//!   call is denied by `dontAsk`. Selected tools run without prompts, including writes to
+//!   external services. claude.ai connectors connect asynchronously in `--print` mode, so
+//!   `CLAUDE_CODE_MCP_STARTUP_WAIT_MS` (documented, v2.1.274 or later) makes the first turn
+//!   wait for every pending server. `--tools` turns tool search off, so connected servers'
+//!   tools are listed directly.
 //!
 //! Models come from a static list of aliases resolved by the CLI (`--model` documents
 //! `fable`, `opus` and `sonnet`; `haiku` was verified in a recorded run). The CLI exposes no
@@ -65,6 +77,9 @@ use crate::{
 const PROGRAM: &str = "claude";
 const READ_ONLY_TOOLS: &str = "Read,Glob,Grep";
 const WORKSPACE_WRITE_TOOLS: &str = "Read,Glob,Grep,Edit,Write,Bash";
+/// How long the first turn waits for configured MCP servers that are still connecting.
+const MCP_STARTUP_WAIT_ENV: &str = "CLAUDE_CODE_MCP_STARTUP_WAIT_MS";
+const MCP_STARTUP_WAIT_MS: &str = "15000";
 /// Effort levels documented by `claude --help` for `--effort`.
 const EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 /// Reads `/usage` locally: no tools, no saved session, and no user hooks or plugins.
@@ -124,6 +139,7 @@ impl AgentProvider for ClaudeProvider {
             ProviderCapability::ModelSelection,
             ProviderCapability::UsageLimits,
             ProviderCapability::RuntimeTools,
+            ProviderCapability::ConfiguredMcpServers,
         ]
     }
 
@@ -367,14 +383,37 @@ fn allowed_tools(access: WorkspaceAccess) -> &'static str {
     }
 }
 
+/// The tool-name prefix Claude Code derives from an MCP server name.
+fn mcp_tool_prefix(server: &str) -> String {
+    let name: String = server
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || "_-".contains(character) {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("mcp__{name}")
+}
+
 fn turn_command(request: &TurnRequest) -> LineCommand {
     let tools = allowed_tools(request.access);
+    let mut allowed = vec![tools.to_owned()];
     // A server name in `--allowed-tools` pre-approves every tool that server provides.
-    let allowed = if request.runtime_tools.is_some() {
-        format!("{tools},mcp__{RUNTIME_TOOLS_SERVER_NAME}")
-    } else {
-        tools.to_owned()
-    };
+    let runtime_prefix = format!("mcp__{RUNTIME_TOOLS_SERVER_NAME}");
+    if request.runtime_tools.is_some() {
+        allowed.push(runtime_prefix.clone());
+    }
+    for server in &request.mcp_servers {
+        let prefix = mcp_tool_prefix(server);
+        // A configured server cannot stand in for the Open Bots runtime server.
+        if prefix != runtime_prefix {
+            allowed.push(format!("{prefix}__*"));
+        }
+    }
+    let allowed = allowed.join(",");
     let mut arguments: Vec<String> = [
         "-p",
         "--output-format",
@@ -414,12 +453,15 @@ fn turn_command(request: &TurnRequest) -> LineCommand {
                 }
             }
         });
-        arguments.extend([
-            "--mcp-config".into(),
-            config.to_string(),
-            "--strict-mcp-config".into(),
-        ]);
+        arguments.extend(["--mcp-config".into(), config.to_string()]);
+        // Without selected servers, the user's own configuration stays out of the turn.
+        if request.mcp_servers.is_empty() {
+            arguments.push("--strict-mcp-config".into());
+        }
         environment.set(RUNTIME_TOOLS_TOKEN_ENV, endpoint.token.clone());
+    }
+    if !request.mcp_servers.is_empty() {
+        environment.set(MCP_STARTUP_WAIT_ENV, MCP_STARTUP_WAIT_MS);
     }
     LineCommand {
         environment,
@@ -586,6 +628,56 @@ mod tests {
     }
 
     #[test]
+    fn pre_approves_selected_configured_mcp_servers() {
+        let mut with_servers = request(None, WorkspaceAccess::ReadOnly);
+        with_servers.runtime_tools = Some(crate::providers::RuntimeToolsEndpoint {
+            url: "http://127.0.0.1:4100/mcp".into(),
+            token: "secret-token".into(),
+        });
+        with_servers.mcp_servers = vec![
+            "claude.ai Atlassian".into(),
+            "github".into(),
+            "open_bots".into(),
+        ];
+        let command = turn_command(&with_servers);
+        let allowed = command
+            .arguments
+            .iter()
+            .position(|argument| argument == "--allowed-tools")
+            .map(|index| command.arguments[index + 1].clone());
+        assert_eq!(
+            allowed.as_deref(),
+            Some("Read,Glob,Grep,mcp__open_bots,mcp__claude_ai_Atlassian__*,mcp__github__*")
+        );
+        assert!(command.arguments.contains(&"--mcp-config".to_owned()));
+        assert!(!command
+            .arguments
+            .contains(&"--strict-mcp-config".to_owned()));
+        assert_eq!(
+            command.environment.get("CLAUDE_CODE_MCP_STARTUP_WAIT_MS"),
+            Some("15000")
+        );
+    }
+
+    #[test]
+    fn keeps_configured_mcp_servers_out_by_default() {
+        let mut with_tools = request(None, WorkspaceAccess::ReadOnly);
+        with_tools.runtime_tools = Some(crate::providers::RuntimeToolsEndpoint {
+            url: "http://127.0.0.1:4100/mcp".into(),
+            token: "secret-token".into(),
+        });
+        let command = turn_command(&with_tools);
+        assert!(command
+            .arguments
+            .contains(&"--strict-mcp-config".to_owned()));
+        assert!(!command.arguments.join(" ").contains("__*"));
+        assert_eq!(
+            command.environment.get("CLAUDE_CODE_MCP_STARTUP_WAIT_MS"),
+            None
+        );
+    }
+
+    #[test]
     fn omits_runtime_tools_when_not_offered() {
         let command = turn_command(&request(None, WorkspaceAccess::ReadOnly));
         assert!(!command.arguments.contains(&"--mcp-config".to_owned()));
@@ -601,6 +693,7 @@ mod tests {
             model: None,
             reasoning_effort: None,
             runtime_tools: None,
+            mcp_servers: Vec::new(),
         }
     }
 

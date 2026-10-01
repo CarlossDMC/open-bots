@@ -1,12 +1,13 @@
 import { Cpu, FolderGit2, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { AgentAvatar } from "./agent-avatar";
+import { AgentMcpServersSection } from "./agent-mcp-servers";
 import { AgentMemorySection } from "./agent-memory";
 import { AgentRoutinesSection } from "./agent-routines";
 import { ModelPicker, type ModelChoice } from "./model-picker";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { updateAgentModel } from "@/lib/desktop-api";
-import { describeModel } from "@/lib/models";
+import { describeModel, supportsConfiguredMcpServers } from "@/lib/models";
 import { describeError, titleCase } from "@/lib/utils";
 import type { Agent, ProviderSummary } from "@/types/domain";
 
@@ -57,6 +58,9 @@ export function AgentDetails({
           <p className="mt-2 text-xs text-foreground-faint">Local directory workspace</p>
         </section>
         <AgentModelSection agent={agent} provider={provider} onAgentUpdated={onAgentUpdated} />
+        {supportsConfiguredMcpServers(provider) && (
+          <AgentMcpServersSection agent={agent} onAgentUpdated={onAgentUpdated} />
+        )}
         <section className="panel lg:col-span-5">
           <h2 className="section-title">
             <Settings2 size={14} /> Configuration

@@ -95,6 +95,14 @@ export async function updateAgentModel(
   return invoke<Agent>("update_agent_model", { agentId: agent.id, model, reasoningEffort });
 }
 
+/** Replaces the agent's configured MCP servers. Applies from the agent's next turn. */
+export async function updateAgentMcpServers(agent: Agent, servers: string[]): Promise<Agent> {
+  if (!isTauriRuntime()) {
+    return { ...agent, mcpServers: servers, updatedAt: new Date().toISOString() };
+  }
+  return invoke<Agent>("update_agent_mcp_servers", { agentId: agent.id, servers });
+}
+
 export async function listEvents(limit: number): Promise<RuntimeEvent[]> {
   if (!isTauriRuntime()) return demoEvents;
   return invoke<RuntimeEvent[]>("list_events", { limit });

@@ -21,6 +21,8 @@ pub enum MessageRole {
 pub struct ConversationMessage {
     pub id: Uuid,
     pub agent_id: Uuid,
+    /// The peer that sent this message; absent for user, runtime, and local agent messages.
+    pub source_agent_id: Option<Uuid>,
     pub role: MessageRole,
     pub content: String,
     pub created_at: DateTime<Utc>,
@@ -40,6 +42,7 @@ impl ConversationMessage {
         Ok(Self {
             id: Uuid::new_v4(),
             agent_id,
+            source_agent_id: None,
             role,
             content: content.to_owned(),
             // Millisecond precision matches what persistence keeps.

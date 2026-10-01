@@ -72,6 +72,8 @@ The desktop process serves an MCP Streamable HTTP endpoint on `127.0.0.1` (ADR 0
 
 The policy allows these runtime actions. Unknown actions are `ASK`, and a tool that needs approval is reported as unsupported rather than run. The CLIs' own tools, such as file edits and shell, stay under each adapter's sandbox and permission flags. They are not routed through Open Bots approvals.
 
+An agent can also select MCP servers from its provider's own configuration, such as claude.ai connectors in Claude Code, when the provider declares `configured_mcp_servers`. The selection is stored on the agent and applies from its next turn. Those servers' tools run under the provider's permission flags, without Open Bots approvals, and their credentials stay with the provider CLI.
+
 ### Persistence
 
 SQLite stores application state. SQL is restricted to repository implementations and migrations. Migrations are ordered scripts applied once each based on SQLite `user_version`. Artifacts will store metadata in SQLite and content as local files; only the domain boundary exists today. Agent memories are short local notes in `agent_memories`, at most 200 per agent, marked as written by the user or learned by the agent. They are sent with the agent context on the first turn of each provider session, so a memory saved mid-session reaches the provider in its next session.

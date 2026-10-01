@@ -25,7 +25,7 @@ pub use task_repository::{SqliteTaskRepository, TaskRepository};
 pub use wake_repository::{SqliteWakeRepository, WakeRepository};
 
 /// Ordered schema migrations. Each entry runs once, when `user_version` is below its version.
-const MIGRATIONS: [(i64, &str); 8] = [
+const MIGRATIONS: [(i64, &str); 10] = [
     (1, include_str!("migrations/0001_initial.sql")),
     (2, include_str!("migrations/0002_agent_memories.sql")),
     (3, include_str!("migrations/0003_routines.sql")),
@@ -34,6 +34,11 @@ const MIGRATIONS: [(i64, &str); 8] = [
     (6, include_str!("migrations/0006_task_ownership.sql")),
     (7, include_str!("migrations/0007_agent_wakes.sql")),
     (8, include_str!("migrations/0008_memory_source.sql")),
+    (9, include_str!("migrations/0009_agent_mcp_servers.sql")),
+    (
+        10,
+        include_str!("migrations/0010_conversation_message_source.sql"),
+    ),
 ];
 
 pub struct Database {
@@ -163,8 +168,11 @@ mod tests {
                 connection.prepare("SELECT id, source FROM agent_memories LIMIT 0")?;
                 connection.prepare("SELECT id FROM agent_wakes LIMIT 0")?;
                 connection.prepare("SELECT id FROM routines LIMIT 0")?;
-                connection.prepare("SELECT id FROM conversation_messages LIMIT 0")?;
-                connection.prepare("SELECT model, reasoning_effort FROM agents LIMIT 0")?;
+                connection
+                    .prepare("SELECT id, source_agent_id FROM conversation_messages LIMIT 0")?;
+                connection.prepare(
+                    "SELECT model, reasoning_effort, mcp_servers_json FROM agents LIMIT 0",
+                )?;
                 connection
                     .prepare("SELECT created_by_agent_id, result, updated_at FROM tasks LIMIT 0")?;
                 Ok(())

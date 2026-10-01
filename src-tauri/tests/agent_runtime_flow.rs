@@ -399,3 +399,42 @@ async fn agent_messages_wake_the_recipient() {
     assert!(prompt.contains("Message from Atlas."));
     assert!(prompt.contains("The schema changed; please rebase."));
 }
+
+#[tokio::test]
+async fn an_agent_reply_wakes_the_original_sender() {
+    let mut harness = TestHarness::new();
+    let (atlas, nova) = (harness.atlas.clone(), harness.nova.clone());
+    harness
+        .messaging
+        .send(
+            TurnContext {
+                agent_id: atlas.id,
+                chain_depth: 0,
+            },
+            nova.id,
+            "Can you review the schema?",
+            None,
+        )
+        .expect("question");
+    harness.next(EventType::AgentCompleted, &nova).await;
+
+    harness
+        .messaging
+        .send(
+            TurnContext {
+                agent_id: nova.id,
+                chain_depth: 1,
+            },
+            atlas.id,
+            "Yes. The schema is ready.",
+            None,
+        )
+        .expect("reply");
+    harness.next(EventType::AgentCompleted, &atlas).await;
+
+    let prompt = &harness.prompts_for(&atlas)[0];
+    assert!(prompt.contains("Message from Nova."));
+    assert!(prompt.contains("Yes. The schema is ready."));
+    let transcript = harness.conversations.list(atlas.id).expect("messages");
+    assert_eq!(transcript[0].source_agent_id, Some(nova.id));
+}

@@ -41,7 +41,8 @@ impl Tool for AgentMessageTool {
     fn description(&self) -> &'static str {
         "Send a message to another agent by name or id. The recipient is woken to read it after \
          its current turn. Use it to ask questions, share findings, or hand off context; use \
-         task_create instead when you want work done and tracked."
+         task_create instead when you want work done and tracked. A normal assistant response \
+         stays in your own conversation, so always use this tool to reply to another agent."
     }
     fn input_contract(&self) -> Value {
         json!({

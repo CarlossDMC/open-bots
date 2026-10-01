@@ -38,6 +38,15 @@ pub fn update_agent_model(
 }
 
 #[tauri::command]
+pub fn update_agent_mcp_servers(
+    agent_id: Uuid,
+    servers: Vec<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Agent> {
+    state.agents.update_mcp_servers(agent_id, servers)
+}
+
+#[tauri::command]
 pub async fn list_provider_models(
     provider_id: String,
     state: State<'_, AppState>,

@@ -119,6 +119,7 @@ async fn run_live_turn(provider: &dyn AgentProvider, model: Option<&str>) {
                 model: model.map(str::to_owned),
                 reasoning_effort: None,
                 runtime_tools: Some(RuntimeToolsEndpoint { url, token }),
+                mcp_servers: Vec::new(),
             },
             sender,
             CancellationSignal::never(),

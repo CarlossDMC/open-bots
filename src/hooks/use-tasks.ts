@@ -9,7 +9,9 @@ export interface Tasks {
   available: boolean;
   loading: boolean;
   error?: string;
+  createError?: string;
   create: (input: NewTaskInput) => Promise<boolean>;
+  clearCreateError: () => void;
   setStatus: (task: AgentTask, status: TaskStatus) => Promise<void>;
 }
 
@@ -17,6 +19,7 @@ export function useTasks(): Tasks {
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [createError, setCreateError] = useState<string>();
 
   const reload = useCallback(async () => {
     try {
@@ -44,13 +47,15 @@ export function useTasks(): Tasks {
       setTasks((current) =>
         current.some((candidate) => candidate.id === task.id) ? current : [task, ...current]
       );
-      setError(undefined);
+      setCreateError(undefined);
       return true;
     } catch (caught) {
-      setError(describeError(caught, "The task could not be created."));
+      setCreateError(describeError(caught, "The task could not be created."));
       return false;
     }
   }, []);
+
+  const clearCreateError = useCallback(() => setCreateError(undefined), []);
 
   const setStatus = useCallback(async (task: AgentTask, status: TaskStatus) => {
     try {
@@ -64,5 +69,14 @@ export function useTasks(): Tasks {
     }
   }, []);
 
-  return { tasks, available: isTauriRuntime(), loading, error, create, setStatus };
+  return {
+    tasks,
+    available: isTauriRuntime(),
+    loading,
+    error,
+    createError,
+    create,
+    clearCreateError,
+    setStatus
+  };
 }

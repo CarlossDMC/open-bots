@@ -26,6 +26,8 @@ export interface Agent {
   /** `null` keeps the provider's default model. */
   model?: string | null;
   reasoningEffort?: string | null;
+  /** MCP servers from the provider's own configuration the agent may use, by name. */
+  mcpServers?: string[];
   currentTask?: string;
   createdAt: string;
   updatedAt: string;
@@ -51,8 +53,17 @@ export interface NewAgentInput {
   reasoningEffort?: string | null;
 }
 
-export type TaskStatus =
-  "pending" | "queued" | "running" | "waiting" | "blocked" | "completed" | "failed" | "cancelled";
+export const taskStatuses = [
+  "pending",
+  "queued",
+  "running",
+  "waiting",
+  "blocked",
+  "completed",
+  "failed",
+  "cancelled"
+] as const;
+export type TaskStatus = (typeof taskStatuses)[number];
 
 export interface AgentTask {
   id: string;
@@ -129,7 +140,8 @@ export interface ProviderSummary {
 /** Capabilities that unlock model and usage features; mirrors `ProviderCapability`. */
 export const providerCapabilities = {
   modelSelection: "model_selection",
-  usageLimits: "usage_limits"
+  usageLimits: "usage_limits",
+  configuredMcpServers: "configured_mcp_servers"
 } as const;
 
 export interface ProviderModel {
@@ -193,6 +205,8 @@ export type MessageRole = "user" | "agent" | "system";
 export interface ConversationMessage {
   id: string;
   agentId: string;
+  /** The peer agent that sent an incoming message. */
+  sourceAgentId?: string | null;
   role: MessageRole;
   content: string;
   createdAt: string;

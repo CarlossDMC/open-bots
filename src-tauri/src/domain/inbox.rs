@@ -46,7 +46,9 @@ impl WakeOrigin {
                 status,
                 task_id,
             } => format!("A task you delegated is {status}: \"{title}\" (task {task_id})."),
-            Self::AgentMessage { from_name, .. } => format!("Message from {from_name}."),
+            Self::AgentMessage { from_name, .. } => format!(
+                "Message from {from_name}. To reply, you must use the agent_message tool; a normal response is only shown in your own conversation."
+            ),
             Self::ApprovalResolved {
                 approval_id,
                 approved,
@@ -203,6 +205,18 @@ mod tests {
         );
         assert!(validate_agent_message(from, from, "hi").is_err());
         assert!(validate_agent_message(from, to, "   ").is_err());
+    }
+
+    #[test]
+    fn agent_message_notice_explains_how_to_reply() {
+        let origin = WakeOrigin::AgentMessage {
+            from_agent_id: Uuid::new_v4(),
+            from_name: "Atlas".into(),
+        };
+        let notice = origin.notice();
+        assert!(notice.starts_with("Message from Atlas."));
+        assert!(notice.contains("must use the agent_message tool"));
+        assert!(notice.contains("normal response is only shown in your own conversation"));
     }
 
     #[test]

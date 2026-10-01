@@ -102,11 +102,14 @@ impl ConversationService {
     /// recorded in the conversation so the user can see why the agent started working.
     pub fn start_wake(self: &Arc<Self>, wake: &Wake) -> AppResult<()> {
         let prompt = wake.prompt();
-        let notice = ConversationMessage::new(
+        let mut notice = ConversationMessage::new(
             wake.agent_id,
             MessageRole::System,
             &bounded(&prompt, MAX_MESSAGE_LENGTH),
         )?;
+        if let crate::domain::inbox::WakeOrigin::AgentMessage { from_agent_id, .. } = &wake.origin {
+            notice.source_agent_id = Some(*from_agent_id);
+        }
         self.start_turn(wake.agent_id, notice, prompt, wake.chain_depth)
             .map(|_| ())
     }
@@ -283,6 +286,14 @@ impl ConversationService {
             model: agent.model_selection.model().map(str::to_owned),
             reasoning_effort: agent.model_selection.reasoning_effort().map(str::to_owned),
             runtime_tools: runtime_tools.clone(),
+            mcp_servers: if provider
+                .capabilities()
+                .contains(&ProviderCapability::ConfiguredMcpServers)
+            {
+                agent.mcp_servers.names().to_vec()
+            } else {
+                Vec::new()
+            },
         };
         let (sender, mut receiver) = mpsc::unbounded_channel();
         let drain = async {
@@ -397,7 +408,12 @@ impl ConversationService {
         self.publish(
             EventType::MessageCreated,
             message.id,
-            json!({ "agentId": message.agent_id, "messageId": message.id, "role": message.role }),
+            json!({
+                "agentId": message.agent_id,
+                "messageId": message.id,
+                "role": message.role,
+                "sourceAgentId": message.source_agent_id,
+            }),
         )
     }
 

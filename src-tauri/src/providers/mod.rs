@@ -69,6 +69,9 @@ pub enum ProviderCapability {
     /// The provider connects to the Open Bots MCP server during a turn, so the agent can
     /// manage tasks, memories, messages, and approvals.
     RuntimeTools,
+    /// The provider loads MCP servers from its own configuration and lets the agent call the
+    /// tools of the servers selected for it, without approval prompts.
+    ConfiguredMcpServers,
 }
 
 /// A model a provider can run, as reported by the provider's own catalog.
@@ -119,6 +122,9 @@ pub struct TurnRequest {
     pub reasoning_effort: Option<String>,
     /// Set only for providers that declare `RuntimeTools`.
     pub runtime_tools: Option<RuntimeToolsEndpoint>,
+    /// Names of MCP servers from the provider's own configuration whose tools the agent may
+    /// call. Non-empty only for providers that declare `ConfiguredMcpServers`.
+    pub mcp_servers: Vec<String>,
 }
 
 /// MCP server name the adapters register, so tools appear as `mcp__open_bots__<tool>`.

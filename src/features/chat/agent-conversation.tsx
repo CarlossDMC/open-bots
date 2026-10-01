@@ -13,6 +13,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { AgentAvatar } from "@/features/agents/agent-avatar";
 import { AgentDetails } from "@/features/agents/agent-details";
 import { Button } from "@/components/ui/button";
+import { Markdown } from "@/components/ui/markdown";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useConversation } from "@/hooks/use-conversation";
 import { useFreshIds } from "@/hooks/use-fresh-ids";
@@ -31,10 +32,12 @@ import type { Agent, ConversationMessage, ProviderSummary } from "@/types/domain
 
 export function AgentConversation({
   agent,
+  agents = [],
   provider,
   onAgentUpdated
 }: {
   agent: Agent;
+  agents?: Agent[];
   provider?: ProviderSummary;
   onAgentUpdated?: (agent: Agent) => void;
 }) {
@@ -132,6 +135,7 @@ export function AgentConversation({
                 key={message.id}
                 message={message}
                 agentName={agent.name}
+                sourceAgent={agents.find((candidate) => candidate.id === message.sourceAgentId)}
                 fresh={freshIds.has(message.id)}
               />
             ))}
@@ -228,10 +232,12 @@ function WorkingDots() {
 function MessageEntry({
   message,
   agentName,
+  sourceAgent,
   fresh
 }: {
   message: ConversationMessage;
   agentName: string;
+  sourceAgent?: Agent;
   fresh: boolean;
 }) {
   const time = formatConversationTime(message.createdAt);
@@ -240,6 +246,31 @@ function MessageEntry({
     initial: fresh ? "initial" : false,
     animate: "animate"
   } as const;
+  if (message.role === "system" && sourceAgent) {
+    return (
+      <m.li {...motionProps} className="flex items-start gap-3">
+        <AgentAvatar
+          color={sourceAgent.identityColor}
+          variant={sourceAgent.avatarVariant}
+          seed={sourceAgent.id}
+          status={sourceAgent.status}
+          size="sm"
+        />
+        <div className="min-w-0 max-w-[85%] rounded-xl rounded-tl-md border border-border/80 bg-card/60 px-3.5 py-2.5">
+          <p className="mb-1.5 text-xs-plus text-foreground-faint">
+            Message from{" "}
+            <span className="font-medium text-foreground-muted">{sourceAgent.name}</span>
+            <span aria-hidden="true"> · </span>
+            {time}
+          </p>
+          <Markdown
+            content={incomingAgentMessageBody(message.content)}
+            className="text-sm leading-6 text-foreground-secondary"
+          />
+        </div>
+      </m.li>
+    );
+  }
   if (message.role === "system") {
     return (
       <m.li {...motionProps} className="flex items-start gap-3 text-xs text-foreground-subtle">
@@ -264,11 +295,15 @@ function MessageEntry({
       <p className="mb-1 text-xs-plus text-foreground-faint">
         <span className="font-medium text-foreground-muted">{agentName}</span> · {time}
       </p>
-      <p className="whitespace-pre-wrap text-sm leading-6 text-foreground-secondary">
-        {message.content}
-      </p>
+      <Markdown content={message.content} className="text-sm leading-6 text-foreground-secondary" />
     </m.li>
   );
+}
+
+/** The first paragraph is the delivery instruction sent to the provider, not message content. */
+function incomingAgentMessageBody(content: string): string {
+  const separator = content.indexOf("\n\n");
+  return separator >= 0 ? content.slice(separator + 2) : content;
 }
 
 function TimelineEntry({
