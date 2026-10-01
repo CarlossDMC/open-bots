@@ -34,9 +34,14 @@ export function notificationFor(event: RuntimeEvent, agents: Agent[]): DesktopNo
         body: `${agentName} wants to run: ${text("action")}`.trim()
       };
     case "agent.completed":
-      return { title: agentName, body: "Replied to your message" };
+      return { title: agentName, body: "Finished a turn" };
     case "agent.failed":
       return { title: agentName, body: text("detail") || "The turn failed" };
+    case "agent.wake_skipped":
+      return {
+        title: agentName,
+        body: "Stopped after the chained turn limit. Send a message to continue."
+      };
     case "routine.triggered":
       return { title: `${agentName} · routine`, body: text("name") || "A routine was triggered" };
     default:

@@ -25,6 +25,7 @@ import type {
   ProviderUsageReport,
   Routine,
   RuntimeEvent,
+  RuntimeSettings,
   TaskStatus
 } from "@/types/domain";
 
@@ -170,6 +171,19 @@ export async function updateTaskStatus(
 ): Promise<AgentTask> {
   if (!isTauriRuntime()) throw new Error(tasksUnavailableMessage);
   return invoke<AgentTask>("update_task_status", { id, status, result: result ?? null });
+}
+
+/** Browser preview only: mirrors the runtime default. */
+const demoRuntimeSettings: RuntimeSettings = { maxChainTurns: 5 };
+
+export async function getRuntimeSettings(): Promise<RuntimeSettings> {
+  if (!isTauriRuntime()) return demoRuntimeSettings;
+  return invoke<RuntimeSettings>("get_runtime_settings");
+}
+
+export async function updateRuntimeSettings(input: RuntimeSettings): Promise<RuntimeSettings> {
+  if (!isTauriRuntime()) throw new Error("Runtime settings require the desktop runtime.");
+  return invoke<RuntimeSettings>("update_runtime_settings", { input });
 }
 
 /** Routines are scheduled by the desktop runtime; the browser preview cannot run them. */

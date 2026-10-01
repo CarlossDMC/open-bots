@@ -3,6 +3,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { ThemeSelector } from "@/features/appearance/theme-selector";
 import { ProviderUsageList } from "@/features/providers/provider-usage";
 import { NotificationSettings } from "@/features/settings/notification-settings";
+import { RuntimeSettingsForm } from "@/features/settings/runtime-settings";
 import { UpdateSettings } from "@/features/updates/update-settings";
 import type { AppUpdater } from "@/hooks/use-app-updater";
 import type { Notifications } from "@/hooks/use-notifications";
@@ -32,6 +33,7 @@ export function SettingsPage({
         <SettingsCard icon={SlidersHorizontal} title="General">
           <Row name="Startup behavior" value="Open last view" />
           <Row name="Runtime mode" value="Local worker" />
+          <RuntimeSettingsForm />
         </SettingsCard>
         <SettingsCard icon={Puzzle} title="Providers">
           <div className="space-y-3">

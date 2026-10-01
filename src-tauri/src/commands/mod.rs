@@ -2,7 +2,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::{
-    application::{ProviderUsageReport, TaskActor},
+    application::{ProviderUsageReport, RuntimeSettings, TaskActor},
     domain::{
         agents::{Agent, NewAgent},
         approvals::{ApprovalRequest, ApprovalStatus},
@@ -146,6 +146,19 @@ pub fn update_task_status(
     state
         .tasks
         .update_status(id, status, result, TaskActor::User)
+}
+
+#[tauri::command]
+pub fn get_runtime_settings(state: State<'_, AppState>) -> AppResult<RuntimeSettings> {
+    state.settings.runtime()
+}
+
+#[tauri::command]
+pub fn update_runtime_settings(
+    input: RuntimeSettings,
+    state: State<'_, AppState>,
+) -> AppResult<RuntimeSettings> {
+    state.settings.update_runtime(input)
 }
 
 #[tauri::command]

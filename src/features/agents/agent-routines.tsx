@@ -67,7 +67,7 @@ export function AgentRoutinesSection({ agentId }: { agentId: string }) {
       </h2>
       <p className="mb-3 text-xs text-foreground-faint">
         {available
-          ? "Scheduled triggers are recorded in Activity and can notify you. The agent does not execute the instructions yet because live sessions are not implemented."
+          ? "When a routine is due, the agent runs its instructions as a turn while Open Bots is open. Runs missed while it was closed collapse into one."
           : routinesUnavailableMessage}
       </p>
       <form className="grid gap-2" onSubmit={(event) => void handleSubmit(event)}>

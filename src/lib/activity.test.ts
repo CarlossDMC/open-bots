@@ -57,6 +57,15 @@ describe("toActivityEvent", () => {
     expect(detail("agent.cancelled")).toBe("Stopped");
   });
 
+  it("describes task events by title", () => {
+    const detail = (eventType: string, payload: Record<string, unknown> = {}) =>
+      toActivityEvent(runtimeEvent({ eventType, payload }), []).detail;
+    expect(detail("task.assigned", { title: "Review the API" })).toBe(
+      "Task assigned: Review the API"
+    );
+    expect(detail("task.completed")).toBe("Task completed");
+  });
+
   it("describes model changes", () => {
     const detail = (payload: Record<string, unknown>) =>
       toActivityEvent(runtimeEvent({ eventType: "agent.updated", payload }), []).detail;

@@ -1,4 +1,5 @@
 mod activity_service;
+mod agent_runtime;
 mod agent_service;
 mod approval_service;
 mod conversation_prompt;
@@ -7,9 +8,11 @@ mod memory_service;
 mod provider_service;
 mod routine_scheduler;
 mod routine_service;
+mod settings_service;
 mod task_service;
 
 pub use activity_service::{ActivityService, MAX_ACTIVITY_EVENTS};
+pub use agent_runtime::{run_agent_runtime, AgentRuntime};
 pub use agent_service::AgentService;
 pub use approval_service::ApprovalService;
 pub use conversation_service::{ConversationService, CONVERSATION_HISTORY_LIMIT};
@@ -17,4 +20,5 @@ pub use memory_service::MemoryService;
 pub use provider_service::{ProviderService, ProviderUsageReport};
 pub use routine_scheduler::{run_routine_scheduler, MAX_SCHEDULER_WAIT};
 pub use routine_service::RoutineService;
+pub use settings_service::{RuntimeSettings, SettingsService};
 pub use task_service::{TaskActor, TaskService};

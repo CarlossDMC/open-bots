@@ -14,6 +14,7 @@ use crate::{
         agents::{Agent, AgentStatus},
         conversations::{ConversationMessage, MessageRole, MAX_MESSAGE_LENGTH},
         events::{DomainEvent, EventType},
+        inbox::Wake,
     },
     error::{AppError, AppResult},
     infrastructure::database::{
@@ -39,6 +40,7 @@ pub struct ConversationService {
     events: Arc<dyn EventRepository>,
     event_bus: EventBus,
     running: Mutex<HashMap<Uuid, Canceller>>,
+    chain_depths: Mutex<HashMap<Uuid, u32>>,
 }
 
 impl ConversationService {
@@ -58,6 +60,7 @@ impl ConversationService {
             events,
             event_bus,
             running: Mutex::new(HashMap::new()),
+            chain_depths: Mutex::new(HashMap::new()),
         }
     }
 
@@ -70,9 +73,59 @@ impl ConversationService {
     /// arrives as `message.created`, `tool.*`, and `agent.*` events. Must be called from
     /// within a Tokio runtime.
     pub fn send(self: &Arc<Self>, agent_id: Uuid, content: &str) -> AppResult<ConversationMessage> {
+        let message = ConversationMessage::new(agent_id, MessageRole::User, content)?;
+        let prompt = message.content.clone();
+        // A user message starts a new chain.
+        self.start_turn(agent_id, message, prompt, 0)
+    }
+
+    /// Starts a turn for a wake that did not come from the user. The wake's notice is
+    /// recorded in the conversation so the user can see why the agent started working.
+    pub fn start_wake(self: &Arc<Self>, wake: &Wake) -> AppResult<()> {
+        let prompt = wake.prompt();
+        let notice = ConversationMessage::new(
+            wake.agent_id,
+            MessageRole::System,
+            &bounded(&prompt, MAX_MESSAGE_LENGTH),
+        )?;
+        self.start_turn(wake.agent_id, notice, prompt, wake.chain_depth)
+            .map(|_| ())
+    }
+
+    /// Whether the agent has a turn in progress.
+    pub fn is_running(&self, agent_id: Uuid) -> bool {
+        self.lock_running()
+            .map(|running| running.contains_key(&agent_id))
+            .unwrap_or(true)
+    }
+
+    /// Chained turns behind the agent's latest turn; 0 when it was started by the user.
+    pub fn chain_depth(&self, agent_id: Uuid) -> u32 {
+        self.chain_depths
+            .lock()
+            .ok()
+            .and_then(|depths| depths.get(&agent_id).copied())
+            .unwrap_or(0)
+    }
+
+    /// Records a runtime notice in the agent's conversation without starting a turn.
+    pub fn append_notice(&self, agent_id: Uuid, content: &str) -> AppResult<()> {
+        self.append_message(
+            agent_id,
+            MessageRole::System,
+            &bounded(content, MAX_MESSAGE_LENGTH),
+        )
+    }
+
+    fn start_turn(
+        self: &Arc<Self>,
+        agent_id: Uuid,
+        message: ConversationMessage,
+        prompt: String,
+        chain_depth: u32,
+    ) -> AppResult<ConversationMessage> {
         let mut agent = self.find_agent(agent_id)?;
         let provider = self.providers.get(&agent.provider_id)?;
-        let message = ConversationMessage::new(agent_id, MessageRole::User, content)?;
 
         let (canceller, signal) = cancellation_pair();
         {
@@ -89,13 +142,15 @@ impl ConversationService {
             agent.transition_to(AgentStatus::Working)?;
             running.insert(agent_id, canceller);
         }
+        if let Ok(mut depths) = self.chain_depths.lock() {
+            depths.insert(agent_id, chain_depth);
+        }
         if let Err(error) = self.begin_turn(&agent, &message) {
             self.release(agent_id);
             return Err(error);
         }
 
         let service = Arc::clone(self);
-        let prompt = message.content.clone();
         tokio::spawn(async move {
             service.run_turn(agent, provider, prompt, signal).await;
         });

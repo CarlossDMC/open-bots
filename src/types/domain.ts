@@ -195,3 +195,8 @@ export interface ConversationMessage {
   content: string;
   createdAt: string;
 }
+
+export interface RuntimeSettings {
+  /** Turns that may chain from one user message or routine before the user steps in. */
+  maxChainTurns: number;
+}

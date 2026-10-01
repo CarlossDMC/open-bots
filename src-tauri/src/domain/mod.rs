@@ -3,6 +3,7 @@ pub mod approvals;
 pub mod artifacts;
 pub mod conversations;
 pub mod events;
+pub mod inbox;
 pub mod memories;
 pub mod routines;
 pub mod tasks;

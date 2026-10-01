@@ -10,14 +10,15 @@ pub mod tools;
 use std::sync::Arc;
 
 use application::{
-    run_routine_scheduler, ActivityService, AgentService, ApprovalService, ConversationService,
-    MemoryService, ProviderService, RoutineService, TaskService,
+    run_agent_runtime, run_routine_scheduler, ActivityService, AgentRuntime, AgentService,
+    ApprovalService, ConversationService, MemoryService, ProviderService, RoutineService,
+    SettingsService, TaskService,
 };
 use infrastructure::{
     database::{
         Database, SqliteAgentRepository, SqliteApprovalRepository, SqliteConversationRepository,
         SqliteEventRepository, SqliteMemoryRepository, SqliteRoutineRepository,
-        SqliteTaskRepository,
+        SqliteSettingsRepository, SqliteTaskRepository, SqliteWakeRepository,
     },
     process::{TokioJsonRpcProcessClient, TokioLineProcessRunner},
 };
@@ -37,6 +38,7 @@ pub struct AppState {
     activity: ActivityService,
     routines: Arc<RoutineService>,
     tasks: Arc<TaskService>,
+    settings: Arc<SettingsService>,
     conversations: Arc<ConversationService>,
     providers: Arc<ProviderRegistry>,
     provider_catalog: ProviderService,
@@ -62,6 +64,10 @@ pub fn run() {
             let memory_repository = Arc::new(SqliteMemoryRepository::new(Arc::clone(&database)));
             let routine_repository = Arc::new(SqliteRoutineRepository::new(Arc::clone(&database)));
             let task_repository = Arc::new(SqliteTaskRepository::new(Arc::clone(&database)));
+            let wake_repository = Arc::new(SqliteWakeRepository::new(Arc::clone(&database)));
+            let settings = Arc::new(SettingsService::new(Arc::new(
+                SqliteSettingsRepository::new(Arc::clone(&database)),
+            )));
             let conversation_repository =
                 Arc::new(SqliteConversationRepository::new(Arc::clone(&database)));
             let event_repository = Arc::new(SqliteEventRepository::new(database));
@@ -75,7 +81,7 @@ pub fn run() {
                 TokioLineProcessRunner,
             ))))?;
             let providers = Arc::new(registry);
-            let event_bus = EventBus::new(128);
+            let event_bus = EventBus::new(512);
             forward_runtime_events(app.handle().clone(), &event_bus);
             let agents = AgentService::new(
                 agent_repository.clone(),
@@ -107,17 +113,28 @@ pub fn run() {
                 event_bus.clone(),
             );
             let tasks = Arc::new(TaskService::new(
-                task_repository,
+                task_repository.clone(),
                 agent_repository.clone(),
                 event_repository.clone(),
                 event_bus.clone(),
             ));
             let routines = Arc::new(RoutineService::new(
-                routine_repository,
-                agent_repository,
+                routine_repository.clone(),
+                agent_repository.clone(),
                 event_repository.clone(),
-                event_bus,
+                event_bus.clone(),
             ));
+            let agent_runtime = Arc::new(AgentRuntime::new(
+                wake_repository,
+                agent_repository,
+                routine_repository,
+                task_repository,
+                Arc::clone(&settings),
+                Arc::clone(&conversations),
+                event_repository.clone(),
+                event_bus.clone(),
+            ));
+            tauri::async_runtime::spawn(run_agent_runtime(agent_runtime, event_bus.subscribe()));
             tauri::async_runtime::spawn(run_routine_scheduler(Arc::clone(&routines)));
             let activity = ActivityService::new(event_repository);
             let provider_catalog = ProviderService::new(Arc::clone(&providers));
@@ -128,6 +145,7 @@ pub fn run() {
                 activity,
                 routines,
                 tasks,
+                settings,
                 conversations,
                 providers,
                 provider_catalog,
@@ -156,6 +174,8 @@ pub fn run() {
             commands::create_task,
             commands::assign_task,
             commands::update_task_status,
+            commands::get_runtime_settings,
+            commands::update_runtime_settings,
             commands::list_messages,
             commands::send_message,
             commands::cancel_turn

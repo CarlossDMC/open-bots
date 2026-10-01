@@ -88,7 +88,7 @@ impl RoutineService {
     }
 
     /// Records a run for every routine due at `now` and publishes `routine.triggered`.
-    /// Agents do not execute routine instructions yet; the event is the wake signal.
+    /// The agent runtime turns the event into a wake that runs the instructions.
     pub fn fire_due(&self, now: DateTime<Utc>) -> AppResult<Vec<Routine>> {
         let mut fired = Vec::new();
         for mut routine in self.routines.list_due(now)? {

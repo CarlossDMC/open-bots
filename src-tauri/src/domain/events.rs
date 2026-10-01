@@ -33,6 +33,9 @@ pub enum EventType {
     AgentCompleted,
     #[serde(rename = "agent.cancelled")]
     AgentCancelled,
+    /// A wake was not run because the chain of turns reached its limit.
+    #[serde(rename = "agent.wake_skipped")]
+    AgentWakeSkipped,
     #[serde(rename = "message.created")]
     MessageCreated,
     #[serde(rename = "task.created")]

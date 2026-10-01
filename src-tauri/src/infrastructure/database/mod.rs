@@ -4,7 +4,9 @@ mod conversation_repository;
 mod event_repository;
 mod memory_repository;
 mod routine_repository;
+mod settings_repository;
 mod task_repository;
+mod wake_repository;
 
 use std::{path::Path, sync::Mutex};
 
@@ -18,16 +20,19 @@ pub use conversation_repository::{ConversationRepository, SqliteConversationRepo
 pub use event_repository::{EventRepository, SqliteEventRepository};
 pub use memory_repository::{MemoryRepository, SqliteMemoryRepository};
 pub use routine_repository::{RoutineRepository, SqliteRoutineRepository};
+pub use settings_repository::{SettingsRepository, SqliteSettingsRepository};
 pub use task_repository::{SqliteTaskRepository, TaskRepository};
+pub use wake_repository::{SqliteWakeRepository, WakeRepository};
 
 /// Ordered schema migrations. Each entry runs once, when `user_version` is below its version.
-const MIGRATIONS: [(i64, &str); 6] = [
+const MIGRATIONS: [(i64, &str); 7] = [
     (1, include_str!("migrations/0001_initial.sql")),
     (2, include_str!("migrations/0002_agent_memories.sql")),
     (3, include_str!("migrations/0003_routines.sql")),
     (4, include_str!("migrations/0004_conversations.sql")),
     (5, include_str!("migrations/0005_agent_models.sql")),
     (6, include_str!("migrations/0006_task_ownership.sql")),
+    (7, include_str!("migrations/0007_agent_wakes.sql")),
 ];
 
 pub struct Database {

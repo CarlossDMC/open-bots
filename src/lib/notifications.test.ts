@@ -41,7 +41,13 @@ describe("notificationFor", () => {
         { ...runtimeEvent("agent.completed", {}), aggregateId: "demo-atlas" },
         demoAgents
       )
-    ).toEqual({ title: "Atlas", body: "Replied to your message" });
+    ).toEqual({ title: "Atlas", body: "Finished a turn" });
+    expect(
+      notificationFor(runtimeEvent("agent.wake_skipped", { agentId: "demo-atlas" }), demoAgents)
+    ).toEqual({
+      title: "Atlas",
+      body: "Stopped after the chained turn limit. Send a message to continue."
+    });
     expect(
       notificationFor(runtimeEvent("agent.failed", { detail: "usage limit" }), demoAgents)
     ).toEqual({ title: "An agent", body: "usage limit" });

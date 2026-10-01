@@ -5,6 +5,7 @@ const fixedDetails: Record<string, string> = {
   "agent.started": "Started working",
   "agent.completed": "Finished the turn",
   "agent.cancelled": "Stopped",
+  "agent.wake_skipped": "Not woken: chained turn limit reached",
   "memory.added": "Memory added",
   "memory.removed": "Memory removed"
 };
@@ -14,6 +15,16 @@ const routineDetails: Record<string, string> = {
   "routine.updated": "Routine updated",
   "routine.deleted": "Routine deleted",
   "routine.triggered": "Routine triggered"
+};
+
+const taskDetails: Record<string, string> = {
+  "task.created": "Task created",
+  "task.assigned": "Task assigned",
+  "task.started": "Task started",
+  "task.updated": "Task updated",
+  "task.completed": "Task completed",
+  "task.failed": "Task failed",
+  "task.cancelled": "Task cancelled"
 };
 
 const approvalDetails: Record<string, string> = {
@@ -74,6 +85,11 @@ function describeDetail(event: RuntimeEvent): string {
   if (event.eventType === "agent.failed") {
     const detail = stringField(event.payload, "detail");
     return detail ? `Failed: ${detail}` : "Failed";
+  }
+  const task = taskDetails[event.eventType];
+  if (task) {
+    const title = stringField(event.payload, "title");
+    return title ? `${task}: ${title}` : task;
   }
   const routine = routineDetails[event.eventType];
   if (routine) {
