@@ -77,6 +77,15 @@ describe("toActivityEvent", () => {
     expect(detail({ model: null })).toBe("Model reset to provider default");
   });
 
+  it("describes MCP server changes", () => {
+    const detail = (payload: Record<string, unknown>) =>
+      toActivityEvent(runtimeEvent({ eventType: "agent.updated", payload }), []).detail;
+    expect(detail({ mcpServers: ["claude.ai Atlassian", "github"] })).toBe(
+      "MCP servers set to claude.ai Atlassian, github"
+    );
+    expect(detail({ mcpServers: [] })).toBe("MCP servers cleared");
+  });
+
   it("includes the action in approval details", () => {
     const activity = toActivityEvent(
       runtimeEvent({ eventType: "approval.denied", payload: { action: "git push" } }),

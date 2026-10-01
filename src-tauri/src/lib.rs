@@ -11,15 +11,16 @@ use std::sync::Arc;
 
 use application::{
     run_agent_runtime, run_routine_scheduler, ActivityService, AgentRuntime, AgentService,
-    ApprovalService, ConversationService, MemoryService, MessagingService, ProviderService,
-    RoutineService, SettingsService, TaskService, ToolService,
+    ApprovalService, ConversationService, McpCatalogService, MemoryService, MessagingService,
+    ProviderService, RoutineService, SettingsService, TaskService, ToolService,
 };
 use domain::approvals::DefaultApprovalPolicy;
 use infrastructure::{
     database::{
         Database, SqliteAgentRepository, SqliteApprovalRepository, SqliteConversationRepository,
-        SqliteEventRepository, SqliteMemoryRepository, SqliteRoutineRepository,
-        SqliteSettingsRepository, SqliteTaskRepository, SqliteWakeRepository,
+        SqliteEventRepository, SqliteMcpCatalogRepository, SqliteMemoryRepository,
+        SqliteRoutineRepository, SqliteSettingsRepository, SqliteTaskRepository,
+        SqliteWakeRepository,
     },
     mcp::McpListener,
     process::{TokioJsonRpcProcessClient, TokioLineProcessRunner},
@@ -44,6 +45,7 @@ pub struct AppState {
     conversations: Arc<ConversationService>,
     providers: Arc<ProviderRegistry>,
     provider_catalog: ProviderService,
+    mcp_catalog: McpCatalogService,
 }
 
 pub fn run() {
@@ -67,6 +69,8 @@ pub fn run() {
             let routine_repository = Arc::new(SqliteRoutineRepository::new(Arc::clone(&database)));
             let task_repository = Arc::new(SqliteTaskRepository::new(Arc::clone(&database)));
             let wake_repository = Arc::new(SqliteWakeRepository::new(Arc::clone(&database)));
+            let mcp_catalog_repository =
+                Arc::new(SqliteMcpCatalogRepository::new(Arc::clone(&database)));
             let settings = Arc::new(SettingsService::new(Arc::new(
                 SqliteSettingsRepository::new(Arc::clone(&database)),
             )));
@@ -90,7 +94,8 @@ pub fn run() {
                 event_repository.clone(),
                 event_bus.clone(),
                 Arc::clone(&providers),
-            );
+            )
+            .with_mcp_catalog(mcp_catalog_repository.clone());
             let approvals = Arc::new(ApprovalService::new(
                 approval_repository.clone(),
                 agent_repository.clone(),
@@ -108,7 +113,8 @@ pub fn run() {
                     event_repository.clone(),
                     event_bus.clone(),
                 )
-                .with_runtime_tools(mcp_listener.url(), Arc::clone(&turn_tokens)),
+                .with_runtime_tools(mcp_listener.url(), Arc::clone(&turn_tokens))
+                .with_mcp_catalog(mcp_catalog_repository.clone()),
             );
             if let Err(error) = conversations.recover_interrupted() {
                 tracing::error!(%error, "interrupted turns could not be recovered");
@@ -165,6 +171,12 @@ pub fn run() {
             ));
             tauri::async_runtime::spawn(run_agent_runtime(agent_runtime, event_bus.subscribe()));
             tauri::async_runtime::spawn(run_routine_scheduler(Arc::clone(&routines)));
+            let mcp_catalog = McpCatalogService::new(
+                mcp_catalog_repository,
+                event_repository.clone(),
+                event_bus.clone(),
+                Arc::clone(&providers),
+            );
             let activity = ActivityService::new(event_repository);
             let provider_catalog = ProviderService::new(Arc::clone(&providers));
             app.manage(AppState {
@@ -178,6 +190,7 @@ pub fn run() {
                 conversations,
                 providers,
                 provider_catalog,
+                mcp_catalog,
             });
             tracing::info!(storage = %data_directory.display(), "local runtime initialized");
             Ok(())
@@ -190,6 +203,9 @@ pub fn run() {
             commands::read_provider_usage,
             commands::update_agent_model,
             commands::update_agent_mcp_servers,
+            commands::list_mcp_catalog,
+            commands::discover_mcp_servers,
+            commands::save_mcp_catalog,
             commands::list_events,
             commands::list_approvals,
             commands::resolve_approval,

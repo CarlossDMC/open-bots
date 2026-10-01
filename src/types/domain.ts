@@ -144,6 +144,22 @@ export const providerCapabilities = {
   configuredMcpServers: "configured_mcp_servers"
 } as const;
 
+/** An MCP server the user made available to the agents of one provider. */
+export interface McpCatalogEntry {
+  providerId: string;
+  name: string;
+  addedAt: string;
+}
+
+export type McpServerStatus =
+  "connected" | "needs-authentication" | "failed" | "pending-approval" | "unknown";
+
+/** A server found in a provider's own configuration; only its name and health are read. */
+export interface ConfiguredMcpServer {
+  name: string;
+  status: McpServerStatus;
+}
+
 export interface ProviderModel {
   id: string;
   displayName: string;

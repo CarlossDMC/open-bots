@@ -14,9 +14,11 @@ import type {
   Agent,
   AgentMemory,
   AgentTask,
+  ConfiguredMcpServer,
   ConversationMessage,
   ApprovalDecision,
   ApprovalRequest,
+  McpCatalogEntry,
   NewAgentInput,
   NewRoutineInput,
   NewTaskInput,
@@ -44,7 +46,7 @@ export async function listAgents(): Promise<{ agents: Agent[]; isDemo: boolean }
   return { agents: await invoke<Agent[]>("list_agents"), isDemo: false };
 }
 
-export async function createAgent(input: NewAgentInput): Promise<Agent> {
+export async function createAgent(input: NewAgentInput, mcpServers: string[] = []): Promise<Agent> {
   if (!isTauriRuntime()) {
     const timestamp = new Date().toISOString();
     return {
@@ -52,6 +54,7 @@ export async function createAgent(input: NewAgentInput): Promise<Agent> {
       id: crypto.randomUUID(),
       avatarVariant: "orbital",
       status: "idle",
+      mcpServers,
       permissions: {
         filesystem: "workspace-only",
         shell: "approval-required",
@@ -63,7 +66,7 @@ export async function createAgent(input: NewAgentInput): Promise<Agent> {
       updatedAt: timestamp
     };
   }
-  return invoke<Agent>("create_agent", { input });
+  return invoke<Agent>("create_agent", { input, mcpServers });
 }
 
 export async function listProviders(): Promise<ProviderSummary[]> {
@@ -101,6 +104,31 @@ export async function updateAgentMcpServers(agent: Agent, servers: string[]): Pr
     return { ...agent, mcpServers: servers, updatedAt: new Date().toISOString() };
   }
   return invoke<Agent>("update_agent_mcp_servers", { agentId: agent.id, servers });
+}
+
+/** The browser preview has no provider configuration, so the catalog starts empty. */
+export async function listMcpCatalog(): Promise<McpCatalogEntry[]> {
+  if (!isTauriRuntime()) return [];
+  return invoke<McpCatalogEntry[]>("list_mcp_catalog");
+}
+
+/** Runs the provider's own server listing; nothing is saved until `saveMcpCatalog`. */
+export async function discoverMcpServers(providerId: string): Promise<ConfiguredMcpServer[]> {
+  if (!isTauriRuntime()) {
+    throw new Error("Importing MCP servers needs the desktop app.");
+  }
+  return invoke<ConfiguredMcpServer[]>("discover_mcp_servers", { providerId });
+}
+
+/** Replaces one provider's catalog entries and returns the whole catalog. */
+export async function saveMcpCatalog(
+  providerId: string,
+  servers: string[]
+): Promise<McpCatalogEntry[]> {
+  if (!isTauriRuntime()) {
+    throw new Error("Saving MCP servers needs the desktop app.");
+  }
+  return invoke<McpCatalogEntry[]>("save_mcp_catalog", { providerId, servers });
 }
 
 export async function listEvents(limit: number): Promise<RuntimeEvent[]> {

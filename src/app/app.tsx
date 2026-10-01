@@ -120,10 +120,10 @@ export function App() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  async function handleCreate(input: NewAgentInput) {
+  async function handleCreate(input: NewAgentInput, mcpServers: string[]) {
     setCreating(true);
     try {
-      const agent = await createAgent(input);
+      const agent = await createAgent(input, mcpServers);
       setAgents((current) => [agent, ...current]);
       setSelectedAgentId(agent.id);
       setView("chat");

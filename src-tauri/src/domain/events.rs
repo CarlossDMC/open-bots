@@ -75,6 +75,8 @@ pub enum EventType {
     MemoryAdded,
     #[serde(rename = "memory.removed")]
     MemoryRemoved,
+    #[serde(rename = "mcp_catalog.updated")]
+    McpCatalogUpdated,
     #[serde(rename = "routine.created")]
     RoutineCreated,
     #[serde(rename = "routine.updated")]

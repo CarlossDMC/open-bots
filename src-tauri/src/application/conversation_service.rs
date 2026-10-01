@@ -18,7 +18,8 @@ use crate::{
     },
     error::{AppError, AppResult},
     infrastructure::database::{
-        AgentRepository, ConversationRepository, EventRepository, MemoryRepository,
+        AgentRepository, ConversationRepository, EventRepository, McpCatalogRepository,
+        MemoryRepository,
     },
     providers::{
         AgentProvider, ProviderCapability, ProviderRegistry, RuntimeToolsEndpoint, TurnEvent,
@@ -46,6 +47,7 @@ pub struct ConversationService {
     running: Mutex<HashMap<Uuid, Canceller>>,
     chain_depths: Mutex<HashMap<Uuid, u32>>,
     runtime_tools: Option<RuntimeToolsAccess>,
+    mcp_catalog: Option<Arc<dyn McpCatalogRepository>>,
 }
 
 /// The local MCP server and the token registry it authenticates against.
@@ -73,7 +75,41 @@ impl ConversationService {
             running: Mutex::new(HashMap::new()),
             chain_depths: Mutex::new(HashMap::new()),
             runtime_tools: None,
+            mcp_catalog: None,
         }
+    }
+
+    /// Lets turns use the agent's MCP servers that are still in the global catalog. Without
+    /// it, no configured MCP servers reach the provider.
+    pub fn with_mcp_catalog(mut self, catalog: Arc<dyn McpCatalogRepository>) -> Self {
+        self.mcp_catalog = Some(catalog);
+        self
+    }
+
+    /// The agent's selected servers that its provider supports and the catalog still lists.
+    fn available_mcp_servers(
+        &self,
+        agent: &Agent,
+        provider: &dyn AgentProvider,
+    ) -> AppResult<Vec<String>> {
+        let Some(catalog) = &self.mcp_catalog else {
+            return Ok(Vec::new());
+        };
+        if agent.mcp_servers.is_empty()
+            || !provider
+                .capabilities()
+                .contains(&ProviderCapability::ConfiguredMcpServers)
+        {
+            return Ok(Vec::new());
+        }
+        let entries = catalog.list_for_provider(&agent.provider_id)?;
+        Ok(agent
+            .mcp_servers
+            .names()
+            .iter()
+            .filter(|name| entries.iter().any(|entry| &entry.name == *name))
+            .cloned()
+            .collect())
     }
 
     /// Offers the runtime tools at `url` to providers that support them. Each turn gets
@@ -286,14 +322,7 @@ impl ConversationService {
             model: agent.model_selection.model().map(str::to_owned),
             reasoning_effort: agent.model_selection.reasoning_effort().map(str::to_owned),
             runtime_tools: runtime_tools.clone(),
-            mcp_servers: if provider
-                .capabilities()
-                .contains(&ProviderCapability::ConfiguredMcpServers)
-            {
-                agent.mcp_servers.names().to_vec()
-            } else {
-                Vec::new()
-            },
+            mcp_servers: self.available_mcp_servers(agent, provider)?,
         };
         let (sender, mut receiver) = mpsc::unbounded_channel();
         let drain = async {

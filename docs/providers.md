@@ -6,14 +6,15 @@ A provider is an interchangeable adapter that runs inference for an agent. Runti
 
 `src-tauri/src/providers/mod.rs` defines `AgentProvider`:
 
-| Method         | Required          | Purpose                                                                     |
-| -------------- | ----------------- | --------------------------------------------------------------------------- |
-| `id`, `name`   | Yes               | Stable identifier stored on agents, and the display name.                   |
-| `detect`       | Yes               | Installation and sign-in status. Report `unknown` when it cannot be proven. |
-| `capabilities` | Yes               | Only what the adapter actually implements and has verified.                 |
-| `run_turn`     | Yes               | Runs one user turn and reports progress as `TurnEvent`s.                    |
-| `list_models`  | `model_selection` | The model catalog shown in the model picker.                                |
-| `read_usage`   | `usage_limits`    | Rate-limit windows shown in the usage panel. Read on demand only.           |
+| Method                        | Required                 | Purpose                                                                      |
+| ----------------------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `id`, `name`                  | Yes                      | Stable identifier stored on agents, and the display name.                    |
+| `detect`                      | Yes                      | Installation and sign-in status. Report `unknown` when it cannot be proven.  |
+| `capabilities`                | Yes                      | Only what the adapter actually implements and has verified.                  |
+| `run_turn`                    | Yes                      | Runs one user turn and reports progress as `TurnEvent`s.                     |
+| `list_models`                 | `model_selection`        | The model catalog shown in the model picker.                                 |
+| `read_usage`                  | `usage_limits`           | Rate-limit windows shown in the usage panel. Read on demand only.            |
+| `list_configured_mcp_servers` | `configured_mcp_servers` | Server names offered by the catalog import in Settings. Read on demand only. |
 
 `run_turn` receives a `TurnRequest` (prompt, workspace, access, previous session, model, effort, runtime tools endpoint, and configured MCP servers) and sends events while it runs:
 
@@ -29,7 +30,7 @@ An adapter that declares `runtime_tools` receives `TurnRequest.runtime_tools` wi
 
 ### Configured MCP servers
 
-An adapter that declares `configured_mcp_servers` receives `TurnRequest.mcp_servers`: names of MCP servers from the provider's own configuration that the user selected for the agent. Load the provider's configuration next to the Open Bots server and pre-approve only the selected servers' tools; unselected servers must not be callable. Open Bots never reads or stores the servers' configuration or credentials. Selected tools run without approval prompts, including writes to external services, so the UI says so next to the selection. The Claude Code adapter uses `mcp__<server>__*` in `--allowed-tools` and drops `--strict-mcp-config` only when servers are selected.
+An adapter that declares `configured_mcp_servers` implements `list_configured_mcp_servers`, which reads the names and health of the MCP servers in the provider's own configuration, and receives `TurnRequest.mcp_servers`: the servers the agent selected that are still in the global catalog. Read only names and statuses; never keep a server's command, URL, headers, or credentials. During a turn, load the provider's configuration next to the Open Bots server and pre-approve only the selected servers' tools; unselected servers must not be callable. Selected tools run without approval prompts, including writes to external services, so the UI says so next to every selection. The Claude Code adapter reads `claude mcp list`, uses `mcp__<server>__*` in `--allowed-tools`, and drops `--strict-mcp-config` only when servers are selected.
 
 ## CLI adapters
 

@@ -8,7 +8,8 @@ const fixedDetails: Record<string, string> = {
   "agent.wake_skipped": "Not woken: chained turn limit reached",
   "agent.waiting": "Waiting for an approval",
   "memory.added": "Memory added",
-  "memory.removed": "Memory removed"
+  "memory.removed": "Memory removed",
+  "mcp_catalog.updated": "MCP server catalog updated"
 };
 
 const routineDetails: Record<string, string> = {
@@ -82,6 +83,12 @@ function describeDetail(event: RuntimeEvent): string {
     return from ? `Message from ${from}` : "Message from another agent";
   }
   if (event.eventType === "agent.updated") {
+    const servers = event.payload.mcpServers;
+    if (Array.isArray(servers)) {
+      return servers.length === 0
+        ? "MCP servers cleared"
+        : `MCP servers set to ${servers.filter((name) => typeof name === "string").join(", ")}`;
+    }
     const model = stringField(event.payload, "model");
     if (!model) return "Model reset to provider default";
     const effort = stringField(event.payload, "reasoningEffort");

@@ -4,7 +4,7 @@ mod codex;
 mod mock;
 mod registry;
 #[cfg(test)]
-mod testing;
+pub(crate) mod testing;
 
 use std::path::PathBuf;
 
@@ -84,6 +84,25 @@ pub struct ProviderModel {
     pub is_default: bool,
     pub reasoning_efforts: Vec<String>,
     pub default_reasoning_effort: Option<String>,
+}
+
+/// An MCP server found in a provider's own configuration. Only the name and the provider's
+/// health check reach Open Bots; the server's command, URL, and credentials do not.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfiguredMcpServer {
+    pub name: String,
+    pub status: McpServerStatus,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpServerStatus {
+    Connected,
+    NeedsAuthentication,
+    Failed,
+    PendingApproval,
+    Unknown,
 }
 
 /// Account usage reported by a provider at `checked_at`.
@@ -195,6 +214,13 @@ pub trait AgentProvider: Send + Sync {
     async fn list_models(&self) -> AppResult<Vec<ProviderModel>> {
         Err(AppError::Unsupported(format!(
             "{} does not list models",
+            self.name()
+        )))
+    }
+    /// Implemented by providers that declare `ConfiguredMcpServers`.
+    async fn list_configured_mcp_servers(&self) -> AppResult<Vec<ConfiguredMcpServer>> {
+        Err(AppError::Unsupported(format!(
+            "{} does not list configured MCP servers",
             self.name()
         )))
     }

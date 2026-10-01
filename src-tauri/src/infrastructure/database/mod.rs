@@ -2,6 +2,7 @@ mod agent_repository;
 mod approval_repository;
 mod conversation_repository;
 mod event_repository;
+mod mcp_catalog_repository;
 mod memory_repository;
 mod routine_repository;
 mod settings_repository;
@@ -18,6 +19,7 @@ pub use agent_repository::{AgentRepository, SqliteAgentRepository};
 pub use approval_repository::{ApprovalRepository, SqliteApprovalRepository};
 pub use conversation_repository::{ConversationRepository, SqliteConversationRepository};
 pub use event_repository::{EventRepository, SqliteEventRepository};
+pub use mcp_catalog_repository::{McpCatalogRepository, SqliteMcpCatalogRepository};
 pub use memory_repository::{MemoryRepository, SqliteMemoryRepository};
 pub use routine_repository::{RoutineRepository, SqliteRoutineRepository};
 pub use settings_repository::{SettingsRepository, SqliteSettingsRepository};
@@ -25,7 +27,7 @@ pub use task_repository::{SqliteTaskRepository, TaskRepository};
 pub use wake_repository::{SqliteWakeRepository, WakeRepository};
 
 /// Ordered schema migrations. Each entry runs once, when `user_version` is below its version.
-const MIGRATIONS: [(i64, &str); 10] = [
+const MIGRATIONS: [(i64, &str); 11] = [
     (1, include_str!("migrations/0001_initial.sql")),
     (2, include_str!("migrations/0002_agent_memories.sql")),
     (3, include_str!("migrations/0003_routines.sql")),
@@ -39,6 +41,7 @@ const MIGRATIONS: [(i64, &str); 10] = [
         10,
         include_str!("migrations/0010_conversation_message_source.sql"),
     ),
+    (11, include_str!("migrations/0011_mcp_catalog.sql")),
 ];
 
 pub struct Database {
@@ -167,6 +170,8 @@ mod tests {
                 assert_eq!(user_version(connection), latest_version());
                 connection.prepare("SELECT id, source FROM agent_memories LIMIT 0")?;
                 connection.prepare("SELECT id FROM agent_wakes LIMIT 0")?;
+                connection
+                    .prepare("SELECT provider_id, name, added_at FROM mcp_catalog LIMIT 0")?;
                 connection.prepare("SELECT id FROM routines LIMIT 0")?;
                 connection
                     .prepare("SELECT id, source_agent_id FROM conversation_messages LIMIT 0")?;

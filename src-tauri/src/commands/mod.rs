@@ -8,12 +8,13 @@ use crate::{
         approvals::{ApprovalRequest, ApprovalStatus},
         conversations::ConversationMessage,
         events::DomainEvent,
+        mcp_servers::McpCatalogEntry,
         memories::AgentMemory,
         routines::{NewRoutine, Routine},
         tasks::{NewTask, Task, TaskStatus},
     },
     error::AppResult,
-    providers::{ProviderModel, ProviderSummary},
+    providers::{ConfiguredMcpServer, ProviderModel, ProviderSummary},
     AppState,
 };
 
@@ -23,8 +24,14 @@ pub fn list_agents(state: State<'_, AppState>) -> AppResult<Vec<Agent>> {
 }
 
 #[tauri::command]
-pub fn create_agent(input: NewAgent, state: State<'_, AppState>) -> AppResult<Agent> {
-    state.agents.create(input)
+pub fn create_agent(
+    input: NewAgent,
+    mcp_servers: Option<Vec<String>>,
+    state: State<'_, AppState>,
+) -> AppResult<Agent> {
+    state
+        .agents
+        .create_with_mcp_servers(input, mcp_servers.unwrap_or_default())
 }
 
 #[tauri::command]
@@ -44,6 +51,28 @@ pub fn update_agent_mcp_servers(
     state: State<'_, AppState>,
 ) -> AppResult<Agent> {
     state.agents.update_mcp_servers(agent_id, servers)
+}
+
+#[tauri::command]
+pub fn list_mcp_catalog(state: State<'_, AppState>) -> AppResult<Vec<McpCatalogEntry>> {
+    state.mcp_catalog.list()
+}
+
+#[tauri::command]
+pub async fn discover_mcp_servers(
+    provider_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<ConfiguredMcpServer>> {
+    state.mcp_catalog.discover(&provider_id).await
+}
+
+#[tauri::command]
+pub fn save_mcp_catalog(
+    provider_id: String,
+    servers: Vec<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<McpCatalogEntry>> {
+    state.mcp_catalog.save(&provider_id, servers)
 }
 
 #[tauri::command]

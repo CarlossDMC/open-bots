@@ -4,6 +4,7 @@ pub mod artifacts;
 pub mod conversations;
 pub mod events;
 pub mod inbox;
+pub mod mcp_servers;
 pub mod memories;
 pub mod routines;
 pub mod tasks;

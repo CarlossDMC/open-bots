@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import { AgentAvatar } from "./agent-avatar";
+import { McpServerPicker } from "./mcp-server-picker";
 import { ModelPicker, type ModelChoice } from "./model-picker";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
+import { useMcpCatalog } from "@/hooks/use-mcp-catalog";
+import { supportsConfiguredMcpServers } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import {
   agentColors,
@@ -20,7 +23,7 @@ interface NewAgentDialogProps {
   busy: boolean;
   providers: ProviderSummary[];
   onClose: () => void;
-  onSubmit: (input: NewAgentInput) => Promise<void>;
+  onSubmit: (input: NewAgentInput, mcpServers: string[]) => Promise<void>;
 }
 
 export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: NewAgentDialogProps) {
@@ -28,6 +31,8 @@ export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: New
   const [error, setError] = useState<string>();
   const [chosenProviderId, setChosenProviderId] = useState<string>();
   const [modelChoice, setModelChoice] = useState<ModelChoice>(providerDefault);
+  const [mcpServers, setMcpServers] = useState<string[]>([]);
+  const mcpCatalog = useMcpCatalog();
   if (!open) return null;
   const providerId = chosenProviderId ?? defaultProvider(providers);
   const provider = providers.find((candidate) => candidate.id === providerId);
@@ -37,17 +42,20 @@ export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: New
     setError(undefined);
     const data = new FormData(event.currentTarget);
     try {
-      await onSubmit({
-        name: formText(data, "name"),
-        role: formText(data, "role"),
-        description: formText(data, "description"),
-        providerId: providerId || "mock",
-        identityColor: color,
-        workspace: formText(data, "workspace"),
-        instructions: formText(data, "instructions"),
-        model: modelChoice.model,
-        reasoningEffort: modelChoice.reasoningEffort
-      });
+      await onSubmit(
+        {
+          name: formText(data, "name"),
+          role: formText(data, "role"),
+          description: formText(data, "description"),
+          providerId: providerId || "mock",
+          identityColor: color,
+          workspace: formText(data, "workspace"),
+          instructions: formText(data, "instructions"),
+          model: modelChoice.model,
+          reasoningEffort: modelChoice.reasoningEffort
+        },
+        supportsConfiguredMcpServers(provider) ? mcpServers : []
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The agent could not be created.");
     }
@@ -114,6 +122,7 @@ export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: New
                 onChange={(value) => {
                   setChosenProviderId(value);
                   setModelChoice(providerDefault);
+                  setMcpServers([]);
                 }}
               />
             </Field>
@@ -127,6 +136,23 @@ export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: New
             reasoningEffort={modelChoice.reasoningEffort}
             onChange={setModelChoice}
           />
+          {supportsConfiguredMcpServers(provider) && (
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-foreground-muted">
+                MCP servers
+              </span>
+              <McpServerPicker
+                provider={provider}
+                entries={mcpCatalog.entries}
+                selected={mcpServers}
+                onChange={setMcpServers}
+              />
+              <p className="mt-1.5 text-xs text-foreground-faint">
+                Tools of selected servers run without approval, including writes to external
+                services.
+              </p>
+            </div>
+          )}
           <Field label="Identity color">
             <div className="flex gap-2">
               {agentColors.map((option) => (

@@ -33,6 +33,12 @@
 //!   `CLAUDE_CODE_MCP_STARTUP_WAIT_MS` (documented, v2.1.274 or later) makes the first turn
 //!   wait for every pending server. `--tools` turns tool search off, so connected servers'
 //!   tools are listed directly.
+//! - The catalog import runs `claude mcp list`, which health-checks each server and prints
+//!   `<name>: <command or URL> - <symbol> <status>` per line (verified: `✔ Connected`,
+//!   `! Needs authentication`). Only the name and status are kept; the command or URL may
+//!   hold secrets and is dropped unread. The command has no JSON output, so a run whose
+//!   lines all fail to parse is an error. Project-scoped servers depend on the directory, so
+//!   only user-scope servers and claude.ai connectors are listed reliably.
 //!
 //! Models come from a static list of aliases resolved by the CLI (`--model` documents
 //! `fable`, `opus` and `sonnet`; `haiku` was verified in a recorded run). The CLI exposes no
@@ -61,12 +67,12 @@ use serde_json::{json, Value};
 
 use super::{
     cli::{CliOutput, CliProgram, SignInCheck, StreamEvent, TurnStreamParser},
-    AgentProvider, ProviderCapability, ProviderModel, ProviderSummary, ProviderUsage, TurnEvent,
-    TurnEvents, TurnOutcome, TurnRequest, UsageWindow, RUNTIME_TOOLS_SERVER_NAME,
-    RUNTIME_TOOLS_TOKEN_ENV,
+    AgentProvider, ConfiguredMcpServer, McpServerStatus, ProviderCapability, ProviderModel,
+    ProviderSummary, ProviderUsage, TurnEvent, TurnEvents, TurnOutcome, TurnRequest, UsageWindow,
+    RUNTIME_TOOLS_SERVER_NAME, RUNTIME_TOOLS_TOKEN_ENV,
 };
 use crate::{
-    domain::agents::WorkspaceAccess,
+    domain::{agents::WorkspaceAccess, mcp_servers::normalize_mcp_server_name},
     error::{AppError, AppResult},
     infrastructure::process::{
         LineCommand, LineProcessExit, LineProcessRunner, ProcessEnvironment,
@@ -162,6 +168,24 @@ impl AgentProvider for ClaudeProvider {
                 cancellation,
             )
             .await
+    }
+
+    async fn list_configured_mcp_servers(&self) -> AppResult<Vec<ConfiguredMcpServer>> {
+        let output = self.cli.run_quiet(&["mcp", "list"], None).await?;
+        match &output.exit {
+            LineProcessExit::ProgramNotFound => return Err(self.cli.not_found()),
+            LineProcessExit::Finished {
+                success: false,
+                code,
+                stderr_tail,
+            } => {
+                return Err(self
+                    .cli
+                    .exit_error("Claude Code mcp list", *code, stderr_tail))
+            }
+            _ => {}
+        }
+        parse_mcp_list(&output.lines)
     }
 
     async fn read_usage(&self) -> AppResult<ProviderUsage> {
@@ -380,6 +404,62 @@ fn allowed_tools(access: WorkspaceAccess) -> &'static str {
     match access {
         WorkspaceAccess::ReadOnly => READ_ONLY_TOOLS,
         WorkspaceAccess::WorkspaceWrite => WORKSPACE_WRITE_TOOLS,
+    }
+}
+
+/// Reads `claude mcp list` output. Lines that are not server entries, such as the health
+/// check banner, are skipped; the command or URL part of each entry is never kept.
+fn parse_mcp_list(lines: &[String]) -> AppResult<Vec<ConfiguredMcpServer>> {
+    let mut servers: Vec<ConfiguredMcpServer> = Vec::new();
+    let mut unrecognized = 0;
+    for line in lines.iter().map(|line| line.trim()) {
+        if line.is_empty() || line.starts_with("Checking MCP server health") {
+            continue;
+        }
+        if line.starts_with("No MCP servers configured") {
+            return Ok(Vec::new());
+        }
+        let entry = line
+            .rsplit_once(" - ")
+            .and_then(|(server, status)| Some((server.split_once(": ")?.0, status)));
+        let Some((name, status)) = entry else {
+            unrecognized += 1;
+            continue;
+        };
+        let Ok(name) = normalize_mcp_server_name(name) else {
+            unrecognized += 1;
+            continue;
+        };
+        if servers.iter().all(|server| server.name != name) {
+            servers.push(ConfiguredMcpServer {
+                name,
+                status: mcp_status(status),
+            });
+        }
+    }
+    if servers.is_empty() && unrecognized > 0 {
+        return Err(AppError::Provider(
+            "the output of `claude mcp list` was not recognized".into(),
+        ));
+    }
+    if unrecognized > 0 {
+        tracing::warn!(unrecognized, "skipped unrecognized `claude mcp list` lines");
+    }
+    Ok(servers)
+}
+
+fn mcp_status(status: &str) -> McpServerStatus {
+    let status = status.to_ascii_lowercase();
+    if status.contains("needs authentication") {
+        McpServerStatus::NeedsAuthentication
+    } else if status.contains("pending approval") {
+        McpServerStatus::PendingApproval
+    } else if status.contains("failed") {
+        McpServerStatus::Failed
+    } else if status.contains("connected") {
+        McpServerStatus::Connected
+    } else {
+        McpServerStatus::Unknown
     }
 }
 
@@ -657,6 +737,46 @@ mod tests {
             command.environment.get("CLAUDE_CODE_MCP_STARTUP_WAIT_MS"),
             Some("15000")
         );
+    }
+
+    #[test]
+    fn parses_mcp_list_names_and_statuses_without_targets() {
+        let lines: Vec<String> = [
+            "Checking MCP server health…",
+            "",
+            "claude.ai Atlassian: https://mcp.atlassian.com/v1/mcp - ✔ Connected",
+            "claude.ai Notion: https://mcp.notion.com/mcp - ! Needs authentication",
+            "github: npx -y server-github --token=secret - ✗ Failed to connect",
+            "weird\"name: x - ✔ Connected",
+        ]
+        .map(String::from)
+        .to_vec();
+        let servers = parse_mcp_list(&lines).expect("servers");
+        assert_eq!(
+            servers,
+            vec![
+                ConfiguredMcpServer {
+                    name: "claude.ai Atlassian".into(),
+                    status: McpServerStatus::Connected
+                },
+                ConfiguredMcpServer {
+                    name: "claude.ai Notion".into(),
+                    status: McpServerStatus::NeedsAuthentication
+                },
+                ConfiguredMcpServer {
+                    name: "github".into(),
+                    status: McpServerStatus::Failed
+                },
+            ]
+        );
+        assert!(!format!("{servers:?}").contains("secret"));
+    }
+
+    #[test]
+    fn rejects_unrecognized_mcp_list_output() {
+        let empty = parse_mcp_list(&["No MCP servers configured. Use `claude mcp add`.".into()]);
+        assert_eq!(empty.expect("empty"), Vec::new());
+        assert!(parse_mcp_list(&["something else entirely".into()]).is_err());
     }
 
     #[test]

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{DomainError, DomainResult};
+use super::{mcp_servers::normalize_mcp_server_names, DomainError, DomainResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -81,50 +81,20 @@ impl ModelSelection {
     }
 }
 
-/// Most MCP servers an agent may use from its provider's own configuration.
+/// Most MCP servers an agent may use.
 const MAX_MCP_SERVERS: usize = 32;
-/// Longest MCP server name accepted.
-const MAX_MCP_SERVER_NAME_LENGTH: usize = 128;
 
-/// MCP servers from the provider's own configuration that the agent may use during a turn,
-/// by the names the provider reports (for example `github` or `claude.ai Atlassian`). Every
-/// tool of a listed server runs without an approval prompt, including tools that write to
-/// external services. Empty keeps the agent to Open Bots runtime tools only.
+/// MCP servers from the global catalog that the agent may use during a turn, by the names
+/// the provider reports (for example `github` or `claude.ai Atlassian`). Every tool of a
+/// selected server runs without an approval prompt, including tools that write to external
+/// services. Empty keeps the agent to Open Bots runtime tools only.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "Vec<String>", into = "Vec<String>")]
 pub struct McpServerSelection(Vec<String>);
 
 impl McpServerSelection {
     pub fn new(names: Vec<String>) -> DomainResult<Self> {
-        let mut servers: Vec<String> = Vec::new();
-        for name in names {
-            let name = name.trim().to_owned();
-            if name.is_empty() || servers.contains(&name) {
-                continue;
-            }
-            if name.len() > MAX_MCP_SERVER_NAME_LENGTH {
-                return Err(DomainError::Validation(format!(
-                    "MCP server names must contain at most {MAX_MCP_SERVER_NAME_LENGTH} characters"
-                )));
-            }
-            // Names reach provider command lines, so only configuration-style characters pass.
-            if !name
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric() || " ._-".contains(character))
-            {
-                return Err(DomainError::Validation(
-                    "MCP server names may only contain letters, digits, spaces, '.', '_' and '-'"
-                        .into(),
-                ));
-            }
-            servers.push(name);
-        }
-        if servers.len() > MAX_MCP_SERVERS {
-            return Err(DomainError::Validation(format!(
-                "an agent may use at most {MAX_MCP_SERVERS} MCP servers"
-            )));
-        }
-        Ok(Self(servers))
+        Ok(Self(normalize_mcp_server_names(names, MAX_MCP_SERVERS)?))
     }
 
     pub fn names(&self) -> &[String] {

@@ -10,7 +10,7 @@ use crate::{
         events::{DomainEvent, EventType},
     },
     error::{AppError, AppResult},
-    infrastructure::database::{AgentRepository, EventRepository},
+    infrastructure::database::{AgentRepository, EventRepository, McpCatalogRepository},
     providers::{ProviderCapability, ProviderRegistry},
     runtime::event_bus::EventBus,
 };
@@ -20,6 +20,7 @@ pub struct AgentService {
     events: Arc<dyn EventRepository>,
     event_bus: EventBus,
     providers: Arc<ProviderRegistry>,
+    mcp_catalog: Option<Arc<dyn McpCatalogRepository>>,
 }
 
 impl AgentService {
@@ -34,7 +35,15 @@ impl AgentService {
             events,
             event_bus,
             providers,
+            mcp_catalog: None,
         }
+    }
+
+    /// Lets agents select MCP servers from the global catalog. Without it, only an empty
+    /// selection is accepted.
+    pub fn with_mcp_catalog(mut self, catalog: Arc<dyn McpCatalogRepository>) -> Self {
+        self.mcp_catalog = Some(catalog);
+        self
     }
 
     pub fn list(&self) -> AppResult<Vec<Agent>> {
@@ -42,8 +51,19 @@ impl AgentService {
     }
 
     pub fn create(&self, input: NewAgent) -> AppResult<Agent> {
+        self.create_with_mcp_servers(input, Vec::new())
+    }
+
+    /// Creates the agent with servers selected from the catalog in one step.
+    pub fn create_with_mcp_servers(
+        &self,
+        input: NewAgent,
+        mcp_servers: Vec<String>,
+    ) -> AppResult<Agent> {
         let provider = self.providers.get(&input.provider_id)?;
-        let agent = Agent::create(input)?;
+        let mut agent = Agent::create(input)?;
+        let selection = self.catalog_selection(&agent.provider_id, mcp_servers)?;
+        agent.change_mcp_servers(selection)?;
         if !agent.model_selection.is_provider_default() {
             require(
                 provider.as_ref(),
@@ -102,19 +122,11 @@ impl AgentService {
 
     /// Applies from the agent's next turn; the provider session is kept.
     pub fn update_mcp_servers(&self, agent_id: Uuid, servers: Vec<String>) -> AppResult<Agent> {
-        let selection = McpServerSelection::new(servers)?;
         let mut agent = self
             .agents
             .find(agent_id)?
             .ok_or_else(|| AppError::NotFound(format!("agent {agent_id}")))?;
-        if !selection.is_empty() {
-            let provider = self.providers.get(&agent.provider_id)?;
-            require(
-                provider.as_ref(),
-                ProviderCapability::ConfiguredMcpServers,
-                "configured MCP servers",
-            )?;
-        }
+        let selection = self.catalog_selection(&agent.provider_id, servers)?;
         agent.change_mcp_servers(selection)?;
         self.agents.save(&agent)?;
         let event = DomainEvent::new(
@@ -133,13 +145,49 @@ impl AgentService {
     }
 }
 
+impl AgentService {
+    /// Validates a selection against the provider's catalog entries.
+    fn catalog_selection(
+        &self,
+        provider_id: &str,
+        servers: Vec<String>,
+    ) -> AppResult<McpServerSelection> {
+        let selection = McpServerSelection::new(servers)?;
+        if selection.is_empty() {
+            return Ok(selection);
+        }
+        let provider = self.providers.get(provider_id)?;
+        require(
+            provider.as_ref(),
+            ProviderCapability::ConfiguredMcpServers,
+            "configured MCP servers",
+        )?;
+        let available = match &self.mcp_catalog {
+            Some(catalog) => catalog.list_for_provider(provider_id)?,
+            None => Vec::new(),
+        };
+        if let Some(missing) = selection
+            .names()
+            .iter()
+            .find(|name| available.iter().all(|entry| &entry.name != *name))
+        {
+            return Err(AppError::Validation(format!(
+                "MCP server \"{missing}\" is not in the {} catalog",
+                provider.name()
+            )));
+        }
+        Ok(selection)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         domain::agents::IdentityColor,
         infrastructure::database::{
-            Database, EventRepository, SqliteAgentRepository, SqliteEventRepository,
+            Database, EventRepository, McpCatalogRepository, SqliteAgentRepository,
+            SqliteEventRepository, SqliteMcpCatalogRepository,
         },
         providers::MockProvider,
     };
@@ -198,6 +246,38 @@ mod tests {
             .update_mcp_servers(agent.id, Vec::new())
             .expect("clearing is always allowed");
         assert!(cleared.mcp_servers.is_empty());
+    }
+
+    #[test]
+    fn accepts_only_servers_in_the_providers_catalog() {
+        let database = Arc::new(Database::in_memory().expect("database"));
+        let catalog = Arc::new(SqliteMcpCatalogRepository::new(Arc::clone(&database)));
+        catalog
+            .replace_for_provider("claude-code", &["claude.ai Atlassian".into()])
+            .expect("catalog");
+        let mut registry = ProviderRegistry::new();
+        let runner = crate::providers::testing::ScriptedRunner::new(Vec::new());
+        registry
+            .register(Arc::new(crate::providers::ClaudeProvider::new(runner)))
+            .expect("claude");
+        let service = AgentService::new(
+            Arc::new(SqliteAgentRepository::new(Arc::clone(&database))),
+            Arc::new(SqliteEventRepository::new(database)),
+            EventBus::new(8),
+            Arc::new(registry),
+        )
+        .with_mcp_catalog(catalog);
+        let mut input = new_agent(None);
+        input.provider_id = "claude-code".into();
+
+        let agent = service
+            .create_with_mcp_servers(input, vec!["claude.ai Atlassian".into()])
+            .expect("agent");
+        assert_eq!(agent.mcp_servers.names(), ["claude.ai Atlassian"]);
+        assert!(matches!(
+            service.update_mcp_servers(agent.id, vec!["github".into()]),
+            Err(AppError::Validation(_))
+        ));
     }
 
     #[test]

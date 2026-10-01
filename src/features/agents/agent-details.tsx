@@ -6,6 +6,7 @@ import { AgentMemorySection } from "./agent-memory";
 import { AgentRoutinesSection } from "./agent-routines";
 import { ModelPicker, type ModelChoice } from "./model-picker";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { useMcpCatalog } from "@/hooks/use-mcp-catalog";
 import { updateAgentModel } from "@/lib/desktop-api";
 import { describeModel, supportsConfiguredMcpServers } from "@/lib/models";
 import { describeError, titleCase } from "@/lib/utils";
@@ -20,6 +21,7 @@ export function AgentDetails({
   provider?: ProviderSummary;
   onAgentUpdated?: (agent: Agent) => void;
 }) {
+  const mcpCatalog = useMcpCatalog();
   return (
     <div className="animate-fade-in">
       <div className="flex items-center gap-4 border-b border-border-subtle pb-6">
@@ -59,7 +61,12 @@ export function AgentDetails({
         </section>
         <AgentModelSection agent={agent} provider={provider} onAgentUpdated={onAgentUpdated} />
         {supportsConfiguredMcpServers(provider) && (
-          <AgentMcpServersSection agent={agent} onAgentUpdated={onAgentUpdated} />
+          <AgentMcpServersSection
+            agent={agent}
+            provider={provider}
+            entries={mcpCatalog.entries}
+            onAgentUpdated={onAgentUpdated}
+          />
         )}
         <section className="panel lg:col-span-5">
           <h2 className="section-title">

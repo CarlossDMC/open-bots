@@ -1,7 +1,17 @@
-import { Bell, Database, Download, Gauge, Monitor, Puzzle, SlidersHorizontal } from "lucide-react";
+import {
+  Bell,
+  Database,
+  Download,
+  Gauge,
+  Monitor,
+  Plug,
+  Puzzle,
+  SlidersHorizontal
+} from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ThemeSelector } from "@/features/appearance/theme-selector";
 import { ProviderUsageList } from "@/features/providers/provider-usage";
+import { McpCatalogSettings } from "@/features/settings/mcp-catalog-settings";
 import { NotificationSettings } from "@/features/settings/notification-settings";
 import { RuntimeSettingsForm } from "@/features/settings/runtime-settings";
 import { UpdateSettings } from "@/features/updates/update-settings";
@@ -60,6 +70,9 @@ export function SettingsPage({
               </div>
             ))}
           </div>
+        </SettingsCard>
+        <SettingsCard icon={Plug} title="MCP servers">
+          <McpCatalogSettings providers={providers} />
         </SettingsCard>
         <SettingsCard icon={Gauge} title="Usage limits">
           <ProviderUsageList usage={usage} showRefresh />

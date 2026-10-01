@@ -72,7 +72,7 @@ The desktop process serves an MCP Streamable HTTP endpoint on `127.0.0.1` (ADR 0
 
 The policy allows these runtime actions. Unknown actions are `ASK`, and a tool that needs approval is reported as unsupported rather than run. The CLIs' own tools, such as file edits and shell, stay under each adapter's sandbox and permission flags. They are not routed through Open Bots approvals.
 
-An agent can also select MCP servers from its provider's own configuration, such as claude.ai connectors in Claude Code, when the provider declares `configured_mcp_servers`. The selection is stored on the agent and applies from its next turn. Those servers' tools run under the provider's permission flags, without Open Bots approvals, and their credentials stay with the provider CLI.
+Settings hold a global catalog of MCP servers from each provider's own configuration, such as claude.ai connectors in Claude Code, for providers that declare `configured_mcp_servers`. The import reads only server names and health from the provider, and the user chooses which names enter the catalog (`mcp_catalog` table, `mcp_catalog.updated` event). Agents select servers from their provider's catalog entries when they are created or edited. Each turn passes the agent's selected servers that the catalog still lists, so removing a server from the catalog revokes it for every agent from its next turn. Those servers' tools run under the provider's permission flags, without Open Bots approvals, and their configuration and credentials stay with the provider CLI.
 
 ### Persistence
 
