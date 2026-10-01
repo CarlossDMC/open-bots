@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRuntimeEvents } from "@/hooks/use-runtime-events";
-import { cancelTurn, listMessages, sendMessage } from "@/lib/desktop-api";
+import { cancelTurn, listMessages, resetAgentSession, sendMessage } from "@/lib/desktop-api";
 import { describeError } from "@/lib/utils";
 import type { ConversationMessage, RuntimeEvent } from "@/types/domain";
 
@@ -12,6 +12,8 @@ export interface Conversation {
   currentAction?: string;
   send: (content: string) => Promise<boolean>;
   cancel: () => Promise<void>;
+  /** Starts a fresh provider session; resolves to false and sets `error` on failure. */
+  resetSession: () => Promise<boolean>;
 }
 
 const turnEndEvents = new Set(["agent.completed", "agent.failed", "agent.cancelled"]);
@@ -75,5 +77,16 @@ export function useConversation(agentId: string): Conversation {
     }
   }, [agentId]);
 
-  return { messages, loading, error, currentAction, send, cancel };
+  const resetSession = useCallback(async () => {
+    try {
+      await resetAgentSession(agentId);
+      setError(undefined);
+      return true;
+    } catch (caught) {
+      setError(describeError(caught, "A new session could not be started."));
+      return false;
+    }
+  }, [agentId]);
+
+  return { messages, loading, error, currentAction, send, cancel, resetSession };
 }

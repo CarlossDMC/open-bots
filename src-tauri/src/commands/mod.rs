@@ -218,6 +218,11 @@ pub async fn send_message(
 }
 
 #[tauri::command]
+pub fn reset_agent_session(agent_id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
+    state.conversations.reset_session(agent_id)
+}
+
+#[tauri::command]
 pub fn cancel_turn(agent_id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
     state.conversations.cancel(agent_id)
 }

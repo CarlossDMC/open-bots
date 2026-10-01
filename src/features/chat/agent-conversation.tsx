@@ -5,6 +5,7 @@ import {
   Loader2,
   MessageSquare,
   Plus,
+  RotateCcw,
   Sparkles,
   Square,
   Terminal
@@ -42,6 +43,8 @@ export function AgentConversation({
   onAgentUpdated?: (agent: Agent) => void;
 }) {
   const [showDetails, setShowDetails] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const conversation = useConversation(agent.id);
   const working = agent.status === "working";
   const unavailableReason = messagingUnavailableReason(provider);
@@ -65,6 +68,12 @@ export function AgentConversation({
     hasFreshContent,
     reduceMotion
   ]);
+
+  async function resetSession() {
+    setResetting(true);
+    if (await conversation.resetSession()) setConfirmingReset(false);
+    setResetting(false);
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -102,21 +111,61 @@ export function AgentConversation({
             )}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowDetails((current) => !current)}
-          aria-label={showDetails ? "Hide agent details" : "Show agent details"}
-          aria-pressed={showDetails}
-          title="Agent details"
-          className={cn(
-            "ml-auto grid size-8 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            showDetails
-              ? "bg-accent text-foreground"
-              : "text-foreground-subtle hover:bg-muted hover:text-foreground"
+        <div className="ml-auto flex items-center gap-1">
+          {confirmingReset ? (
+            <>
+              <span className="mr-1 text-xs text-foreground-subtle">
+                Clear the agent's context?
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={resetting || working}
+                onClick={() => void resetSession()}
+              >
+                {resetting ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <RotateCcw size={13} />
+                )}
+                New session
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmingReset(false)}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingReset(true)}
+              disabled={working || Boolean(unavailableReason)}
+              aria-label="Start a new session"
+              title={
+                working
+                  ? "A new session can start once the current turn ends"
+                  : "New session: the next message starts without earlier context"
+              }
+              className="grid size-8 place-items-center rounded-md text-foreground-subtle transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+            >
+              <RotateCcw size={15} strokeWidth={1.8} />
+            </button>
           )}
-        >
-          <Info size={16} strokeWidth={1.8} />
-        </button>
+          <button
+            type="button"
+            onClick={() => setShowDetails((current) => !current)}
+            aria-label={showDetails ? "Hide agent details" : "Show agent details"}
+            aria-pressed={showDetails}
+            title="Agent details"
+            className={cn(
+              "grid size-8 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              showDetails
+                ? "bg-accent text-foreground"
+                : "text-foreground-subtle hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <Info size={16} strokeWidth={1.8} />
+          </button>
+        </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {showDetails ? (

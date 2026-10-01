@@ -265,6 +265,12 @@ export async function cancelTurn(agentId: string): Promise<void> {
   await invoke("cancel_turn", { agentId });
 }
 
+/** Starts a fresh provider session on the agent's next turn; the conversation stays visible. */
+export async function resetAgentSession(agentId: string): Promise<void> {
+  if (!isTauriRuntime()) throw new Error(messagingUnavailableMessage);
+  await invoke("reset_agent_session", { agentId });
+}
+
 /** Aligns the native title bar with the app theme. `null` lets it follow the operating system. */
 export async function setNativeWindowTheme(theme: ResolvedTheme | null): Promise<void> {
   if (!isTauriRuntime()) return;

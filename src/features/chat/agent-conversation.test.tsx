@@ -18,7 +18,8 @@ describe("AgentConversation", () => {
       messages: [],
       loading: false,
       send: vi.fn().mockResolvedValue(false),
-      cancel: vi.fn().mockResolvedValue(undefined)
+      cancel: vi.fn().mockResolvedValue(undefined),
+      resetSession: vi.fn().mockResolvedValue(true)
     });
   });
 
@@ -67,7 +68,8 @@ describe("AgentConversation", () => {
       ],
       loading: false,
       send: vi.fn().mockResolvedValue(false),
-      cancel: vi.fn().mockResolvedValue(undefined)
+      cancel: vi.fn().mockResolvedValue(undefined),
+      resetSession: vi.fn().mockResolvedValue(true)
     });
 
     render(<AgentConversation agent={recipient} agents={demoAgents} provider={demoProviders[0]} />);

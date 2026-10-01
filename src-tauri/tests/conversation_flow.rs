@@ -322,3 +322,56 @@ async fn marks_turns_interrupted_by_a_restart_as_failed() {
     assert!(harness.transcript()[0].1.starts_with("Interrupted"));
     assert_eq!(harness.service.recover_interrupted().expect("recover"), 0);
 }
+
+#[tokio::test]
+async fn resets_the_session_so_the_next_turn_starts_fresh() {
+    let mut harness = TestHarness::new(Behavior::Reply);
+    harness
+        .service
+        .send(harness.agent.id, "Remember this")
+        .expect("send");
+    harness.finished_turn().await;
+
+    harness
+        .service
+        .reset_session(harness.agent.id)
+        .expect("reset");
+    assert_eq!(
+        harness
+            .conversations
+            .provider_session(harness.agent.id, "scripted")
+            .expect("session"),
+        None
+    );
+    assert!(matches!(
+        harness.transcript().last(),
+        Some((MessageRole::System, notice)) if notice.starts_with("New session started.")
+    ));
+
+    harness
+        .service
+        .send(harness.agent.id, "Start over")
+        .expect("send after reset");
+    harness.finished_turn().await;
+    let requests = harness.provider.requests.lock().expect("requests");
+    assert_eq!(requests[1].session_id, None);
+    assert!(requests[1].prompt.contains("Prefer small changes."));
+    assert!(requests[1].prompt.ends_with("Start over"));
+}
+
+#[tokio::test]
+async fn rejects_a_session_reset_while_the_agent_is_working() {
+    let mut harness = TestHarness::new(Behavior::WaitForCancel);
+    harness
+        .service
+        .send(harness.agent.id, "Long task")
+        .expect("send");
+
+    assert!(matches!(
+        harness.service.reset_session(harness.agent.id),
+        Err(AppError::Validation(message)) if message.contains("stop the turn")
+    ));
+
+    harness.service.cancel(harness.agent.id).expect("cancel");
+    harness.finished_turn().await;
+}

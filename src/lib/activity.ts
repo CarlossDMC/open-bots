@@ -2,6 +2,7 @@ import type { ActivityEvent, Agent, RuntimeEvent } from "@/types/domain";
 
 const fixedDetails: Record<string, string> = {
   "agent.created": "Agent created",
+  "agent.session_reset": "New session started",
   "agent.started": "Started working",
   "agent.completed": "Finished the turn",
   "agent.cancelled": "Stopped",

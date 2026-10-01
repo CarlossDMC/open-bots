@@ -19,6 +19,8 @@ pub enum EventType {
     AgentCreated,
     #[serde(rename = "agent.updated")]
     AgentUpdated,
+    #[serde(rename = "agent.session_reset")]
+    AgentSessionReset,
     #[serde(rename = "agent.started")]
     AgentStarted,
     #[serde(rename = "agent.paused")]

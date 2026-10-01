@@ -37,6 +37,10 @@ pub const CONVERSATION_HISTORY_LIMIT: usize = 200;
 /// Longest action summary kept in an event payload.
 const MAX_ACTION_SUMMARY: usize = 200;
 
+/// Shown where a reset session begins; earlier messages stay visible but not in context.
+const NEW_SESSION_NOTICE: &str =
+    "New session started. The agent no longer has the messages above in its context.";
+
 pub struct ConversationService {
     agents: Arc<dyn AgentRepository>,
     conversations: Arc<dyn ConversationRepository>,
@@ -213,6 +217,32 @@ impl ConversationService {
             service.run_turn(agent, provider, prompt, signal).await;
         });
         Ok(message)
+    }
+
+    /// Forgets the agent's provider sessions, so its next turn starts a fresh session with the
+    /// full first-turn context: runtime notes, identity, instructions, and memories. The
+    /// visible conversation is kept, and a notice marks where the new session begins.
+    pub fn reset_session(&self, agent_id: Uuid) -> AppResult<()> {
+        let agent = self.find_agent(agent_id)?;
+        let cleared = {
+            // Holding the lock keeps a turn from starting, or saving its session, meanwhile.
+            let running = self.lock_running()?;
+            if running.contains_key(&agent_id) {
+                return Err(AppError::Validation(format!(
+                    "{} is working; stop the turn before starting a new session",
+                    agent.name
+                )));
+            }
+            self.conversations.clear_provider_sessions(agent_id)?
+        };
+        self.append_message(agent_id, MessageRole::System, NEW_SESSION_NOTICE)?;
+        self.publish(
+            EventType::AgentSessionReset,
+            agent_id,
+            json!({ "name": agent.name }),
+        )?;
+        tracing::info!(agent_id = %agent_id, cleared, "agent session reset");
+        Ok(())
     }
 
     /// Stops the agent's running turn. The turn then finishes as cancelled.

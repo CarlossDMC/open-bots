@@ -224,7 +224,8 @@ pub fn run() {
             commands::update_runtime_settings,
             commands::list_messages,
             commands::send_message,
-            commands::cancel_turn
+            commands::cancel_turn,
+            commands::reset_agent_session
         ])
         .run(tauri::generate_context!())
         .expect("Tauri application failed to start");

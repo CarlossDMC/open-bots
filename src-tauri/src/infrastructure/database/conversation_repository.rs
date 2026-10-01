@@ -22,6 +22,8 @@ pub trait ConversationRepository: Send + Sync {
         provider_id: &str,
         session_id: &str,
     ) -> AppResult<()>;
+    /// Forgets every provider session of the agent; returns how many were removed.
+    fn clear_provider_sessions(&self, agent_id: Uuid) -> AppResult<usize>;
 }
 
 pub struct SqliteConversationRepository {
@@ -103,6 +105,15 @@ impl ConversationRepository for SqliteConversationRepository {
                 ],
             )?;
             Ok(())
+        })
+    }
+
+    fn clear_provider_sessions(&self, agent_id: Uuid) -> AppResult<usize> {
+        self.database.with_connection(|connection| {
+            Ok(connection.execute(
+                "DELETE FROM provider_sessions WHERE agent_id = ?1",
+                [agent_id.to_string()],
+            )?)
         })
     }
 }
@@ -211,6 +222,16 @@ mod tests {
                 .provider_session(agent.id, "codex")
                 .expect("find"),
             Some("thread-2".into())
+        );
+        assert_eq!(
+            repository.clear_provider_sessions(agent.id).expect("clear"),
+            1
+        );
+        assert_eq!(
+            repository
+                .provider_session(agent.id, "codex")
+                .expect("find after clear"),
+            None
         );
         assert_eq!(
             repository.provider_session(agent.id, "mock").expect("find"),
