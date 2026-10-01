@@ -47,8 +47,8 @@ impl Database {
                 AppError::Database(rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
             })?;
         }
-        let connection = Connection::open(path)?;
-        migrate(&connection)?;
+        let mut connection = Connection::open(path)?;
+        migrate(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -56,8 +56,8 @@ impl Database {
 
     #[cfg(test)]
     pub fn in_memory() -> AppResult<Self> {
-        let connection = Connection::open_in_memory()?;
-        migrate(&connection)?;
+        let mut connection = Connection::open_in_memory()?;
+        migrate(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -75,12 +75,20 @@ impl Database {
     }
 }
 
-fn migrate(connection: &Connection) -> AppResult<()> {
+fn migrate(connection: &mut Connection) -> AppResult<()> {
     connection.execute_batch("PRAGMA foreign_keys = ON;")?;
+    apply_migrations(connection, &MIGRATIONS)
+}
+
+/// Runs each pending migration in its own transaction, so an interrupted or failed script
+/// leaves neither partial schema changes nor an advanced `user_version` behind.
+fn apply_migrations(connection: &mut Connection, migrations: &[(i64, &str)]) -> AppResult<()> {
     let current: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    for (version, script) in MIGRATIONS {
+    for &(version, script) in migrations {
         if current < version {
-            connection.execute_batch(script)?;
+            let transaction = connection.transaction()?;
+            transaction.execute_batch(script)?;
+            transaction.commit()?;
             tracing::info!(version, "database migration applied");
         }
     }
@@ -99,6 +107,31 @@ mod tests {
         connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("user version")
+    }
+
+    #[test]
+    fn rolls_back_a_migration_that_fails_partway() {
+        let mut connection = Connection::open_in_memory().expect("connection");
+        let migrations = [
+            (1, "CREATE TABLE items (id TEXT); PRAGMA user_version = 1;"),
+            (
+                2,
+                "ALTER TABLE items ADD COLUMN name TEXT; \
+                 ALTER TABLE missing ADD COLUMN name TEXT; \
+                 PRAGMA user_version = 2;",
+            ),
+        ];
+
+        assert!(apply_migrations(&mut connection, &migrations).is_err());
+
+        assert_eq!(user_version(&connection), 1);
+        assert!(connection.prepare("SELECT name FROM items").is_err());
+        let retry = [(
+            2,
+            "ALTER TABLE items ADD COLUMN name TEXT; PRAGMA user_version = 2;",
+        )];
+        apply_migrations(&mut connection, &retry).expect("retried migration");
+        assert_eq!(user_version(&connection), 2);
     }
 
     #[test]
