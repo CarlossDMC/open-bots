@@ -1,3 +1,4 @@
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import {
   ArrowUp,
   Info,
@@ -14,7 +15,16 @@ import { AgentDetails } from "@/features/agents/agent-details";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useConversation } from "@/hooks/use-conversation";
+import { useFreshIds } from "@/hooks/use-fresh-ids";
 import { isTauriRuntime, messagingUnavailableMessage } from "@/lib/desktop-api";
+import {
+  fadeUp,
+  iconSwap,
+  messageIn,
+  transitions,
+  userMessageIn,
+  workingDotMotion
+} from "@/lib/motion";
 import { cn, formatConversationTime } from "@/lib/utils";
 import type { Agent, ConversationMessage, ProviderSummary } from "@/types/domain";
 
@@ -30,10 +40,25 @@ export function AgentConversation({
   const working = agent.status === "working";
   const unavailableReason = messagingUnavailableReason(provider);
   const endRef = useRef<HTMLLIElement>(null);
+  const reduceMotion = useReducedMotion();
+  const freshIds = useFreshIds(
+    conversation.messages.map((message) => message.id),
+    !conversation.loading
+  );
+  const hasFreshContent = freshIds.size > 0 || working;
 
   useEffect(() => {
-    endRef.current?.scrollIntoView?.({ block: "end" });
-  }, [conversation.messages.length, conversation.currentAction, showDetails]);
+    // Jump straight to the end for the initial history; glide for new arrivals.
+    const behavior = hasFreshContent && !reduceMotion ? "smooth" : "auto";
+    endRef.current?.scrollIntoView?.({ block: "end", behavior });
+  }, [
+    conversation.messages.length,
+    conversation.currentAction,
+    working,
+    showDetails,
+    hasFreshContent,
+    reduceMotion
+  ]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -46,7 +71,17 @@ export function AgentConversation({
           size="sm"
         />
         <h1 className="truncate text-sm font-medium text-foreground">{agent.name}</h1>
-        <StatusBadge status={agent.status} className="text-2xs" />
+        <AnimatePresence mode="wait" initial={false}>
+          <m.span
+            key={agent.status}
+            variants={fadeUp}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            <StatusBadge status={agent.status} className="text-2xs" />
+          </m.span>
+        </AnimatePresence>
         <button
           type="button"
           onClick={() => setShowDetails((current) => !current)}
@@ -76,26 +111,22 @@ export function AgentConversation({
               time={formatConversationTime(agent.createdAt)}
             />
             {conversation.messages.map((message) => (
-              <MessageEntry key={message.id} message={message} agentName={agent.name} />
+              <MessageEntry
+                key={message.id}
+                message={message}
+                agentName={agent.name}
+                fresh={freshIds.has(message.id)}
+              />
             ))}
-            {working ? (
-              <li
-                className="flex items-center gap-2 pl-1 text-xs text-foreground-subtle"
-                role="status"
-              >
-                {conversation.currentAction ? (
-                  <>
-                    <Terminal size={12} aria-hidden="true" />
-                    <span className="truncate font-mono">{conversation.currentAction}</span>
-                  </>
-                ) : (
-                  <>
-                    <Loader2 size={12} className="animate-spin" aria-hidden="true" />
-                    {agent.name} is working…
-                  </>
-                )}
-              </li>
-            ) : null}
+            <AnimatePresence initial={false}>
+              {working ? (
+                <WorkingIndicator
+                  key="working"
+                  agentName={agent.name}
+                  currentAction={conversation.currentAction}
+                />
+              ) : null}
+            </AnimatePresence>
             <li ref={endRef} aria-hidden="true" />
           </ol>
         )}
@@ -119,36 +150,107 @@ function messagingUnavailableReason(provider?: ProviderSummary): string | undefi
   return undefined;
 }
 
-function MessageEntry({ message, agentName }: { message: ConversationMessage; agentName: string }) {
+/** Shown only while the agent's runtime status is `working`; the dots are its only ambient motion. */
+function WorkingIndicator({
+  agentName,
+  currentAction
+}: {
+  agentName: string;
+  currentAction?: string;
+}) {
+  return (
+    <m.li
+      variants={fadeUp}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      className="flex h-5 items-center gap-2 pl-1 text-xs text-foreground-subtle"
+      role="status"
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        <m.span
+          key={currentAction ?? "thinking"}
+          className="flex min-w-0 items-center gap-2"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: transitions.enter }}
+          exit={{ opacity: 0, transition: transitions.exit }}
+        >
+          {currentAction ? (
+            <>
+              <Terminal size={12} className="shrink-0" aria-hidden="true" />
+              <span className="truncate font-mono">{currentAction}</span>
+            </>
+          ) : (
+            <>
+              <WorkingDots />
+              <span>{agentName} is working</span>
+            </>
+          )}
+        </m.span>
+      </AnimatePresence>
+    </m.li>
+  );
+}
+
+function WorkingDots() {
+  return (
+    <span className="flex items-center gap-[3px]" aria-hidden="true" data-testid="working-dots">
+      {[0, 1, 2].map((index) => (
+        <m.span
+          key={index}
+          className="size-1 rounded-full bg-foreground-subtle"
+          initial={{ opacity: 0.35, y: 0 }}
+          animate={workingDotMotion.keyframes}
+          transition={workingDotMotion.transition(index)}
+        />
+      ))}
+    </span>
+  );
+}
+
+function MessageEntry({
+  message,
+  agentName,
+  fresh
+}: {
+  message: ConversationMessage;
+  agentName: string;
+  fresh: boolean;
+}) {
   const time = formatConversationTime(message.createdAt);
+  const motionProps = {
+    variants: message.role === "user" ? userMessageIn : messageIn,
+    initial: fresh ? "initial" : false,
+    animate: "animate"
+  } as const;
   if (message.role === "system") {
     return (
-      <li className="flex items-start gap-3 text-xs text-foreground-subtle">
+      <m.li {...motionProps} className="flex items-start gap-3 text-xs text-foreground-subtle">
         <Info size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1 whitespace-pre-wrap">{message.content}</span>
         <span className="shrink-0 text-2xs text-foreground-faint">{time}</span>
-      </li>
+      </m.li>
     );
   }
   if (message.role === "user") {
     return (
-      <li className="flex justify-end">
+      <m.li {...motionProps} className="flex justify-end">
         <div className="max-w-[80%] rounded-2xl rounded-br-md bg-muted px-3.5 py-2">
           <p className="whitespace-pre-wrap text-sm text-foreground">{message.content}</p>
           <p className="mt-1 text-right text-2xs text-foreground-faint">{time}</p>
         </div>
-      </li>
+      </m.li>
     );
   }
   return (
-    <li>
+    <m.li {...motionProps}>
       <p className="mb-1 text-2xs text-foreground-faint">
         {agentName} · {time}
       </p>
       <p className="whitespace-pre-wrap text-sm leading-6 text-foreground-secondary">
         {message.content}
       </p>
-    </li>
+    </m.li>
   );
 }
 
@@ -208,7 +310,10 @@ function Composer({
     }
   }
 
-  const status = error ?? unavailableReason ?? (working ? `${agentName} is working.` : undefined);
+  const statusText =
+    error ??
+    unavailableReason ??
+    (working ? `${agentName} is working.` : "Enter to send · Shift+Enter for a new line");
   return (
     <div className="shrink-0 px-5 pb-3">
       <form className="mx-auto max-w-3xl" onSubmit={handleSubmit}>
@@ -229,30 +334,48 @@ function Composer({
             onKeyDown={handleKeyDown}
             className="max-h-40 min-h-8 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-sm text-foreground outline-none placeholder:text-foreground-faint disabled:cursor-not-allowed"
           />
-          {working ? (
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              className="size-8 rounded-full"
-              aria-label="Stop"
-              title="Stop"
-              onClick={onCancel}
-            >
-              <Square size={12} fill="currentColor" />
-            </Button>
-          ) : (
-            <Button
-              type="submit"
-              size="icon"
-              className="size-8 rounded-full"
-              aria-label="Send"
-              title="Send"
-              disabled={disabled || !draft.trim()}
-            >
-              {sending ? <Loader2 size={14} className="animate-spin" /> : <ArrowUp size={15} />}
-            </Button>
-          )}
+          <AnimatePresence mode="wait" initial={false}>
+            {working ? (
+              <m.span
+                key="stop"
+                variants={iconSwap}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="secondary"
+                  className="size-8 rounded-full"
+                  aria-label="Stop"
+                  title="Stop"
+                  onClick={onCancel}
+                >
+                  <Square size={12} fill="currentColor" />
+                </Button>
+              </m.span>
+            ) : (
+              <m.span
+                key="send"
+                variants={iconSwap}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="size-8 rounded-full"
+                  aria-label="Send"
+                  title="Send"
+                  disabled={disabled || !draft.trim()}
+                >
+                  {sending ? <Loader2 size={14} className="animate-spin" /> : <ArrowUp size={15} />}
+                </Button>
+              </m.span>
+            )}
+          </AnimatePresence>
         </div>
         <p
           id="composer-status"
@@ -262,7 +385,17 @@ function Composer({
             error ? "text-danger-foreground" : "text-foreground-faint"
           )}
         >
-          {status ?? "Enter to send · Shift+Enter for a new line"}
+          <AnimatePresence mode="wait" initial={false}>
+            <m.span
+              key={statusText}
+              className="inline-block"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: transitions.enter }}
+              exit={{ opacity: 0, transition: transitions.exit }}
+            >
+              {statusText}
+            </m.span>
+          </AnimatePresence>
         </p>
       </form>
     </div>

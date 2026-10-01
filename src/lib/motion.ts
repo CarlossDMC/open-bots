@@ -23,6 +23,18 @@ export const scaleIn: Variants = {
   exit: { opacity: 0, scale: 0.98, transition: transitions.exit }
 };
 
+/** A new agent reply or runtime notice joining the conversation. */
+export const messageIn: Variants = {
+  initial: { opacity: 0, y: 6 },
+  animate: { opacity: 1, y: 0, transition: transitions.enter }
+};
+
+/** The user's own message, arriving from the composer side. */
+export const userMessageIn: Variants = {
+  initial: { opacity: 0, x: 8, scale: 0.98 },
+  animate: { opacity: 1, x: 0, scale: 1, transition: transitions.enter }
+};
+
 /** Two icons replacing each other in the same slot, such as the theme toggle. */
 export const iconSwap: Variants = {
   initial: { opacity: 0, rotate: -90, scale: 0.6 },
@@ -52,3 +64,19 @@ export const avatarMotion = {
 
 /** Number of keyframe segments in avatarMotion.scan. */
 export const avatarScanSegments = 3;
+
+/**
+ * Ambient "working" dots shown only while an agent's runtime status is `working`. Each dot rises
+ * and brightens in two steps within the duration ceiling, staggered, then pauses before repeating.
+ */
+export const workingDotMotion = {
+  segments: 2,
+  keyframes: { opacity: [0.35, 1, 0.35], y: [0, -2, 0] },
+  transition: (index: number): Transition => ({
+    duration: seconds(durations.slow * 2),
+    ease: easings.standard,
+    repeat: Infinity,
+    repeatDelay: 0.36,
+    delay: index * seconds(durations.fast)
+  })
+};

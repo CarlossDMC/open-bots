@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentConversation } from "./agent-conversation";
 import { demoAgents, demoProviders } from "@/lib/demo-data";
@@ -18,10 +18,22 @@ describe("AgentConversation", () => {
     expect(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(true);
   });
 
-  it("offers a stop control while the agent is working", () => {
+  it("offers a stop control and a working indicator while the agent is working", () => {
     render(<AgentConversation agent={{ ...demoAgents[0], status: "working" }} />);
 
     expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("is working");
+    expect(screen.getByTestId("working-dots")).toBeTruthy();
+  });
+
+  it("removes the working indicator once the turn ends", async () => {
+    const agent = demoAgents[0];
+    const { rerender } = render(<AgentConversation agent={{ ...agent, status: "working" }} />);
+    expect(screen.getByRole("status")).toBeTruthy();
+
+    rerender(<AgentConversation agent={{ ...agent, status: "idle" }} />);
+
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(await screen.findByRole("button", { name: "Send" })).toBeTruthy();
   });
 });

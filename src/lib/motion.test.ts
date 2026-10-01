@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { avatarMotion, avatarScanSegments, fadeUp, iconSwap, scaleIn } from "./motion";
+import {
+  avatarMotion,
+  avatarScanSegments,
+  fadeUp,
+  iconSwap,
+  messageIn,
+  scaleIn,
+  userMessageIn,
+  workingDotMotion
+} from "./motion";
 import { maxDuration } from "@/styles/motion-tokens";
 
-const presets = { fadeUp, scaleIn, iconSwap };
+const presets = { fadeUp, scaleIn, iconSwap, messageIn, userMessageIn };
 const animatable = new Set(["opacity", "x", "y", "scale", "rotate"]);
 const targetsOf = (variants: object) =>
   Object.values(variants) as unknown as Record<string, unknown>[];
@@ -33,5 +42,21 @@ describe("avatar motion", () => {
   it("pauses between repetitions", () => {
     expect(avatarMotion.blink(3).repeatDelay).toBeGreaterThanOrEqual(3);
     expect(avatarMotion.scan.repeatDelay).toBeGreaterThan(1);
+  });
+});
+
+describe("working dot motion", () => {
+  it("keeps each step within the duration ceiling and pauses between cycles", () => {
+    const transition = workingDotMotion.transition(0);
+    const step = ((transition.duration ?? 0) * 1000) / workingDotMotion.segments;
+    expect(step).toBeLessThanOrEqual(maxDuration);
+    expect(transition.repeatDelay).toBeGreaterThan(0);
+  });
+
+  it("staggers dots and animates only opacity and transforms", () => {
+    expect(workingDotMotion.transition(2).delay).toBeGreaterThan(
+      workingDotMotion.transition(1).delay ?? 0
+    );
+    expect(Object.keys(workingDotMotion.keyframes).every((key) => animatable.has(key))).toBe(true);
   });
 });

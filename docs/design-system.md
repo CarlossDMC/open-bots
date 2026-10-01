@@ -45,7 +45,8 @@ Use `motion/react` with `m.*` components (the app runs inside `LazyMotion strict
 
 - `fadeUp` for content appearing in place;
 - `scaleIn` for dialogs and the command palette;
-- `iconSwap` for icons replacing each other.
+- `iconSwap` for icons replacing each other;
+- `messageIn` and `userMessageIn` for conversation messages that arrive while the conversation is open. History loaded with the conversation renders in place (`useFreshIds` in `src/hooks/use-fresh-ids.ts`).
 
 Rules:
 
@@ -56,4 +57,5 @@ Rules:
 - Never use motion to suggest that an unsupported runtime capability is active.
 - Reduced motion is honored for Motion components by `MotionConfig reducedMotion="user"`; do not override it. CSS animations and transitions (including the legacy `animate-fade-in`) do not respect it yet, so prefer `motion-safe:` for any new CSS animation.
 - Exception: agent avatars (`src/features/agents/agent-avatar.tsx`) run ambient micro-animations through `avatarMotion` in `src/lib/motion.ts`. Blinking and the status gaze repeat after pauses, each step stays within 240ms, the gaze reflects only real runtime status, and reduced motion turns them off.
+- Exception: the conversation's working indicator pulses three dots through `workingDotMotion` while, and only while, the agent's runtime status is `working`. Each step stays within 240ms, cycles pause between repeats, and reduced motion turns it off. Replies are not revealed character by character, because providers deliver whole messages and a typing effect would imply token streaming.
 - Use the Tailwind `duration-fast/base/slow` and `ease-standard/exit` utilities for CSS transitions.
