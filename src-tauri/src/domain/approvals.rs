@@ -96,9 +96,9 @@ impl ApprovalPolicy for DefaultApprovalPolicy {
         match context.action_id.as_str() {
             "filesystem.read" | "test.run" => ApprovalDecision::Allow,
             // Runtime actions that only touch Open Bots state for the calling agent's team.
-            "memory.write" | "task.read" | "task.write" | "agent.read" | "agent.message" => {
-                ApprovalDecision::Allow
-            }
+            // Asking for approval is itself always allowed; the user decides the action.
+            "memory.write" | "task.read" | "task.write" | "agent.read" | "agent.message"
+            | "approval.request" => ApprovalDecision::Allow,
             "git.push" | "deploy.production" => ApprovalDecision::Ask,
             _ => ApprovalDecision::Ask,
         }

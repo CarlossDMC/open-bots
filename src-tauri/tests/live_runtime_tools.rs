@@ -8,15 +8,16 @@
 use std::sync::Arc;
 
 use open_bots_lib::{
-    application::{MemoryService, TaskService, ToolService},
+    application::{ApprovalService, MemoryService, MessagingService, TaskService, ToolService},
     domain::{
         agents::{Agent, IdentityColor, NewAgent, WorkspaceAccess},
         approvals::DefaultApprovalPolicy,
     },
     infrastructure::{
         database::{
-            AgentRepository, Database, SqliteAgentRepository, SqliteEventRepository,
-            SqliteMemoryRepository, SqliteTaskRepository,
+            AgentRepository, Database, SqliteAgentRepository, SqliteApprovalRepository,
+            SqliteEventRepository, SqliteMemoryRepository, SqliteTaskRepository,
+            SqliteWakeRepository,
         },
         mcp::McpListener,
         process::{TokioJsonRpcProcessClient, TokioLineProcessRunner},
@@ -66,7 +67,19 @@ async fn run_live_turn(provider: &dyn AgentProvider, model: Option<&str>) {
         event_bus.clone(),
     ));
     let tasks = Arc::new(TaskService::new(
-        Arc::new(SqliteTaskRepository::new(database)),
+        Arc::new(SqliteTaskRepository::new(Arc::clone(&database))),
+        agents.clone(),
+        events.clone(),
+        event_bus.clone(),
+    ));
+    let messaging = Arc::new(MessagingService::new(
+        agents.clone(),
+        Arc::new(SqliteWakeRepository::new(Arc::clone(&database))),
+        events.clone(),
+        event_bus.clone(),
+    ));
+    let approvals = Arc::new(ApprovalService::new(
+        Arc::new(SqliteApprovalRepository::new(database)),
         agents.clone(),
         events,
         event_bus,
@@ -78,6 +91,8 @@ async fn run_live_turn(provider: &dyn AgentProvider, model: Option<&str>) {
             agents,
             memories: Arc::clone(&memories),
             tasks,
+            messaging,
+            approvals,
         },
     )
     .expect("register tools");

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use open_bots_lib::{
-    application::{MemoryService, TaskService, ToolService},
+    application::{ApprovalService, MemoryService, MessagingService, TaskService, ToolService},
     domain::{
         agents::{Agent, IdentityColor, NewAgent},
         approvals::DefaultApprovalPolicy,
@@ -9,8 +9,9 @@ use open_bots_lib::{
     },
     infrastructure::{
         database::{
-            AgentRepository, Database, SqliteAgentRepository, SqliteEventRepository,
-            SqliteMemoryRepository, SqliteTaskRepository,
+            AgentRepository, Database, SqliteAgentRepository, SqliteApprovalRepository,
+            SqliteEventRepository, SqliteMemoryRepository, SqliteTaskRepository,
+            SqliteWakeRepository,
         },
         mcp::McpListener,
     },
@@ -38,6 +39,8 @@ struct TestHarness {
     nova: Agent,
     memories: Arc<MemoryService>,
     tasks: Arc<TaskService>,
+    approvals: Arc<ApprovalService>,
+    wakes: Arc<SqliteWakeRepository>,
 }
 
 fn agent(agents: &SqliteAgentRepository, name: &str) -> Agent {
@@ -73,8 +76,21 @@ impl TestHarness {
             event_bus.clone(),
         ));
         let tasks = Arc::new(TaskService::new(
-            Arc::new(SqliteTaskRepository::new(database)),
+            Arc::new(SqliteTaskRepository::new(Arc::clone(&database))),
             agents.clone(),
+            events.clone(),
+            event_bus.clone(),
+        ));
+        let wakes = Arc::new(SqliteWakeRepository::new(Arc::clone(&database)));
+        let approvals = Arc::new(ApprovalService::new(
+            Arc::new(SqliteApprovalRepository::new(database)),
+            agents.clone(),
+            events.clone(),
+            event_bus.clone(),
+        ));
+        let messaging = Arc::new(MessagingService::new(
+            agents.clone(),
+            wakes.clone(),
             events,
             event_bus,
         ));
@@ -85,6 +101,8 @@ impl TestHarness {
                 agents,
                 memories: Arc::clone(&memories),
                 tasks: Arc::clone(&tasks),
+                messaging,
+                approvals: Arc::clone(&approvals),
             },
         )
         .expect("register tools");
@@ -101,6 +119,8 @@ impl TestHarness {
             nova,
             memories,
             tasks,
+            approvals,
+            wakes,
         }
     }
 
@@ -204,6 +224,8 @@ async fn initializes_and_lists_the_runtime_tools() {
         names,
         [
             "agent_list",
+            "agent_message",
+            "approval_request",
             "memory_save",
             "task_create",
             "task_list",
@@ -298,4 +320,50 @@ async fn reports_invalid_input_and_foreign_tasks_as_tool_errors() {
 
     let unknown = harness.call(&atlas_token, "shell_run", json!({})).await;
     assert_eq!(unknown["isError"], true);
+}
+
+#[tokio::test]
+async fn messages_and_approval_requests_act_for_the_caller() {
+    use open_bots_lib::{
+        domain::approvals::ApprovalStatus, infrastructure::database::WakeRepository,
+    };
+
+    let harness = TestHarness::new();
+    let atlas_token = harness.token_for(&harness.atlas);
+    let sent = harness
+        .call(
+            &atlas_token,
+            "agent_message",
+            json!({ "to": "Nova", "message": "Can you review the API?" }),
+        )
+        .await;
+    assert_eq!(sent["isError"], false, "{sent}");
+    let wake = harness
+        .wakes
+        .next_pending(harness.nova.id)
+        .expect("pending")
+        .expect("wake");
+    assert_eq!(wake.content, "Can you review the API?");
+    assert_eq!(wake.chain_depth, 1);
+
+    let self_message = harness
+        .call(
+            &atlas_token,
+            "agent_message",
+            json!({ "to": "Atlas", "message": "hi" }),
+        )
+        .await;
+    assert_eq!(self_message["isError"], true);
+
+    let requested = harness
+        .call(
+            &atlas_token,
+            "approval_request",
+            json!({ "action": "git push origin main", "reason": "Release" }),
+        )
+        .await;
+    assert_eq!(requested["isError"], false, "{requested}");
+    let approvals = harness.approvals.list().expect("approvals");
+    assert_eq!(approvals[0].agent_id, harness.atlas.id);
+    assert_eq!(approvals[0].status, ApprovalStatus::Pending);
 }

@@ -38,11 +38,13 @@ pub fn first_turn_prompt(
 /// Added only when the provider is connected to the Open Bots MCP server for this turn.
 const RUNTIME_TOOLS_NOTE: &str = "\nOpen Bots tools act on Open Bots for you. Their full \
      names are mcp__open_bots__task_create, mcp__open_bots__task_update, and \
-     mcp__open_bots__task_list to manage your tasks and delegate work to other agents; \
-     mcp__open_bots__agent_list to see the team; and mcp__open_bots__memory_save to keep a \
-     note for future sessions. If they are not listed directly, look for them under those \
-     names. Save lasting preferences and corrections from the user with memory_save. \
-     Delegated agents and finished tasks wake you later, so you do not need to wait for them.";
+     mcp__open_bots__task_list to manage your tasks and delegate work; \
+     mcp__open_bots__agent_list and mcp__open_bots__agent_message to see and talk to the \
+     team; mcp__open_bots__approval_request to ask the user before a sensitive action; and \
+     mcp__open_bots__memory_save to keep a note for future sessions. If they are not listed \
+     directly, look for them under those names. Save lasting preferences and corrections \
+     from the user with memory_save. Delegated agents, messages, finished tasks, and \
+     approval decisions wake you later, so end your turn instead of waiting for them.";
 
 /// Describes how Open Bots runs the agent. It states only behavior the runtime enforces
 /// today, so it must change when tools, approvals, or events reach the provider.

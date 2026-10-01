@@ -64,6 +64,7 @@ describe("toActivityEvent", () => {
       "Task assigned: Review the API"
     );
     expect(detail("task.completed")).toBe("Task completed");
+    expect(detail("agent.message", { fromName: "Atlas" })).toBe("Message from Atlas");
   });
 
   it("describes model changes", () => {

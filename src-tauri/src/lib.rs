@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use application::{
     run_agent_runtime, run_routine_scheduler, ActivityService, AgentRuntime, AgentService,
-    ApprovalService, ConversationService, MemoryService, ProviderService, RoutineService,
-    SettingsService, TaskService, ToolService,
+    ApprovalService, ConversationService, MemoryService, MessagingService, ProviderService,
+    RoutineService, SettingsService, TaskService, ToolService,
 };
 use domain::approvals::DefaultApprovalPolicy;
 use infrastructure::{
@@ -35,7 +35,7 @@ const RUNTIME_EVENT_CHANNEL: &str = "runtime-event";
 
 pub struct AppState {
     agents: AgentService,
-    approvals: ApprovalService,
+    approvals: Arc<ApprovalService>,
     memories: Arc<MemoryService>,
     activity: ActivityService,
     routines: Arc<RoutineService>,
@@ -91,12 +91,12 @@ pub fn run() {
                 event_bus.clone(),
                 Arc::clone(&providers),
             );
-            let approvals = ApprovalService::new(
-                approval_repository,
+            let approvals = Arc::new(ApprovalService::new(
+                approval_repository.clone(),
                 agent_repository.clone(),
                 event_repository.clone(),
                 event_bus.clone(),
-            );
+            ));
             let turn_tokens = TurnTokens::new();
             let mcp_listener = McpListener::bind()?;
             let conversations = Arc::new(
@@ -138,6 +138,13 @@ pub fn run() {
                     agents: agent_repository.clone(),
                     memories: Arc::clone(&memories),
                     tasks: Arc::clone(&tasks),
+                    messaging: Arc::new(MessagingService::new(
+                        agent_repository.clone(),
+                        wake_repository.clone(),
+                        event_repository.clone(),
+                        event_bus.clone(),
+                    )),
+                    approvals: Arc::clone(&approvals),
                 },
             )?;
             let tool_service = Arc::new(ToolService::new(
@@ -150,6 +157,7 @@ pub fn run() {
                 agent_repository,
                 routine_repository,
                 task_repository,
+                approval_repository,
                 Arc::clone(&settings),
                 Arc::clone(&conversations),
                 event_repository.clone(),

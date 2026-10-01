@@ -37,8 +37,8 @@ export function ApprovalsPage({
             <ShieldCheck className="mx-auto mb-3 text-foreground-faint" size={25} />
             <p className="text-sm text-foreground-secondary">No pending approvals</p>
             <p className="mt-1 text-xs text-foreground-faint">
-              Policy-gated actions will appear here. Agents cannot raise requests yet because no
-              provider sessions run.
+              Agents ask here before sensitive actions. The agent waits and is woken with your
+              decision.
             </p>
           </div>
         </div>

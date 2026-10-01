@@ -6,6 +6,7 @@ const fixedDetails: Record<string, string> = {
   "agent.completed": "Finished the turn",
   "agent.cancelled": "Stopped",
   "agent.wake_skipped": "Not woken: chained turn limit reached",
+  "agent.waiting": "Waiting for an approval",
   "memory.added": "Memory added",
   "memory.removed": "Memory removed"
 };
@@ -75,6 +76,10 @@ function describeDetail(event: RuntimeEvent): string {
   if (event.eventType === "message.created") {
     const role = stringField(event.payload, "role");
     return role === "user" ? "Received a message" : role === "agent" ? "Replied" : "Runtime notice";
+  }
+  if (event.eventType === "agent.message") {
+    const from = stringField(event.payload, "fromName");
+    return from ? `Message from ${from}` : "Message from another agent";
   }
   if (event.eventType === "agent.updated") {
     const model = stringField(event.payload, "model");

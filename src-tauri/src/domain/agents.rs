@@ -236,9 +236,10 @@ impl Agent {
     pub fn transition_to(&mut self, next: AgentStatus) -> DomainResult<()> {
         let allowed = matches!(
             (self.status, next),
+            // An idle agent waits while one of its approval requests is pending.
             (
                 AgentStatus::Idle,
-                AgentStatus::Working | AgentStatus::Paused
+                AgentStatus::Working | AgentStatus::Waiting | AgentStatus::Paused
             ) | (
                 AgentStatus::Working,
                 AgentStatus::Idle
@@ -248,7 +249,10 @@ impl Agent {
                     | AgentStatus::Completed
             ) | (
                 AgentStatus::Waiting,
-                AgentStatus::Working | AgentStatus::Paused | AgentStatus::Failed
+                AgentStatus::Working
+                    | AgentStatus::Idle
+                    | AgentStatus::Paused
+                    | AgentStatus::Failed
             ) | (
                 AgentStatus::Paused,
                 AgentStatus::Idle | AgentStatus::Working
@@ -311,6 +315,17 @@ mod tests {
         );
         permissions.filesystem = PermissionLevel::Denied;
         assert_eq!(permissions.workspace_access(), WorkspaceAccess::ReadOnly);
+    }
+    #[test]
+    fn idle_agents_wait_for_approvals_and_resume() {
+        let mut agent = Agent::create(input()).expect("valid agent");
+        agent.transition_to(AgentStatus::Waiting).expect("wait");
+        agent.transition_to(AgentStatus::Working).expect("resume");
+        agent
+            .transition_to(AgentStatus::Waiting)
+            .expect("wait again");
+        agent.transition_to(AgentStatus::Idle).expect("released");
+        assert!(agent.transition_to(AgentStatus::Completed).is_err());
     }
     #[test]
     fn allows_working_agent_to_wait() {

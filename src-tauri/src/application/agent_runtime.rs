@@ -8,13 +8,15 @@ use super::{routine_service::now, ConversationService, SettingsService};
 use crate::{
     domain::{
         agents::AgentStatus,
+        approvals::ApprovalStatus,
         events::{DomainEvent, EventType},
         inbox::{Wake, WakeOrigin, WakeOutcome},
         tasks::Task,
     },
     error::AppResult,
     infrastructure::database::{
-        AgentRepository, EventRepository, RoutineRepository, TaskRepository, WakeRepository,
+        AgentRepository, ApprovalRepository, EventRepository, RoutineRepository, TaskRepository,
+        WakeRepository,
     },
     runtime::event_bus::EventBus,
 };
@@ -27,6 +29,7 @@ pub struct AgentRuntime {
     agents: Arc<dyn AgentRepository>,
     routines: Arc<dyn RoutineRepository>,
     tasks: Arc<dyn TaskRepository>,
+    approvals: Arc<dyn ApprovalRepository>,
     settings: Arc<SettingsService>,
     conversations: Arc<ConversationService>,
     events: Arc<dyn EventRepository>,
@@ -40,6 +43,7 @@ impl AgentRuntime {
         agents: Arc<dyn AgentRepository>,
         routines: Arc<dyn RoutineRepository>,
         tasks: Arc<dyn TaskRepository>,
+        approvals: Arc<dyn ApprovalRepository>,
         settings: Arc<SettingsService>,
         conversations: Arc<ConversationService>,
         events: Arc<dyn EventRepository>,
@@ -50,6 +54,7 @@ impl AgentRuntime {
             agents,
             routines,
             tasks,
+            approvals,
             settings,
             conversations,
             events,
@@ -65,14 +70,45 @@ impl AgentRuntime {
             tracing::info!(agent_id = %wake.agent_id, chain_depth = wake.chain_depth, "agent wake queued");
             self.drain(wake.agent_id)?;
         }
-        if matches!(
-            event.event_type,
-            EventType::AgentCompleted | EventType::AgentFailed | EventType::AgentCancelled
-        ) {
-            if let Some(agent_id) = event.aggregate_id {
-                self.drain(agent_id)?;
+        match event.event_type {
+            EventType::AgentCompleted | EventType::AgentFailed | EventType::AgentCancelled => {
+                if let Some(agent_id) = event.aggregate_id {
+                    self.wait_for_pending_approvals(agent_id)?;
+                    self.drain(agent_id)?;
+                }
             }
+            // Messaging queues the wake itself; the event says there is one to run.
+            EventType::AgentMessage => {
+                if let Some(agent_id) = event.aggregate_id {
+                    self.drain(agent_id)?;
+                }
+            }
+            _ => {}
         }
+        Ok(())
+    }
+
+    /// Shows an agent that ended its turn with a pending approval as waiting until the
+    /// user decides.
+    fn wait_for_pending_approvals(&self, agent_id: Uuid) -> AppResult<()> {
+        let pending = self.approvals.list()?.into_iter().any(|approval| {
+            approval.agent_id == agent_id && approval.status == ApprovalStatus::Pending
+        });
+        let Some(mut agent) = self.agents.find(agent_id)? else {
+            return Ok(());
+        };
+        if !pending || agent.status != AgentStatus::Idle {
+            return Ok(());
+        }
+        agent.transition_to(AgentStatus::Waiting)?;
+        self.agents.save(&agent)?;
+        let event = DomainEvent::new(
+            EventType::AgentWaiting,
+            Some(agent_id),
+            json!({ "agentId": agent_id, "name": agent.name, "reason": "approval" }),
+        );
+        self.events.append(&event)?;
+        self.event_bus.publish(event);
         Ok(())
     }
 
@@ -219,6 +255,33 @@ impl AgentRuntime {
                     )),
                     _ => None,
                 }
+            }
+            // The user's decision starts a new chain.
+            EventType::ApprovalApproved | EventType::ApprovalDenied => {
+                let Some(approval) = event
+                    .aggregate_id
+                    .map(|id| self.approvals.find(id))
+                    .transpose()?
+                    .flatten()
+                else {
+                    return Ok(None);
+                };
+                let approved = approval.status == ApprovalStatus::Approved;
+                let guidance = if approved {
+                    "You may go ahead with it."
+                } else {
+                    "Do not do it. Choose another approach or ask the user."
+                };
+                Some(Wake::new(
+                    approval.agent_id,
+                    WakeOrigin::ApprovalResolved {
+                        approval_id: approval.id,
+                        approved,
+                    },
+                    &format!("Requested action: {}\n{guidance}", approval.action),
+                    0,
+                    now(),
+                ))
             }
             _ => None,
         };

@@ -8,6 +8,7 @@ use super::{DomainError, DomainResult};
 /// runtime stops waking agents and asks the user to step in.
 pub const DEFAULT_MAX_CHAIN_TURNS: u32 = 5;
 pub const MAX_CHAIN_TURNS_LIMIT: u32 = 50;
+pub const MAX_AGENT_MESSAGE_LENGTH: usize = 4_000;
 
 /// Why an agent is woken without a user message.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -128,6 +129,22 @@ impl Wake {
     }
 }
 
+/// Checks a message one agent sends another and returns it trimmed.
+pub fn validate_agent_message(from: Uuid, to: Uuid, message: &str) -> DomainResult<String> {
+    if from == to {
+        return Err(DomainError::Validation(
+            "an agent cannot message itself".into(),
+        ));
+    }
+    let message = message.trim();
+    if message.is_empty() || message.chars().count() > MAX_AGENT_MESSAGE_LENGTH {
+        return Err(DomainError::Validation(format!(
+            "messages must contain 1 to {MAX_AGENT_MESSAGE_LENGTH} characters"
+        )));
+    }
+    Ok(message.to_owned())
+}
+
 pub fn validate_max_chain_turns(value: u32) -> DomainResult<u32> {
     if (1..=MAX_CHAIN_TURNS_LIMIT).contains(&value) {
         Ok(value)
@@ -175,6 +192,17 @@ mod tests {
         wake.consume(WakeOutcome::Started, Utc::now())
             .expect("consume");
         assert!(wake.consume(WakeOutcome::Discarded, Utc::now()).is_err());
+    }
+
+    #[test]
+    fn agent_messages_need_another_recipient_and_text() {
+        let (from, to) = (Uuid::new_v4(), Uuid::new_v4());
+        assert_eq!(
+            validate_agent_message(from, to, " Ready for review ").expect("valid"),
+            "Ready for review"
+        );
+        assert!(validate_agent_message(from, from, "hi").is_err());
+        assert!(validate_agent_message(from, to, "   ").is_err());
     }
 
     #[test]

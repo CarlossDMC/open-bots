@@ -7,11 +7,12 @@ use async_trait::async_trait;
 use chrono::Duration as ChronoDuration;
 use open_bots_lib::{
     application::{
-        run_agent_runtime, AgentRuntime, ConversationService, RoutineService, RuntimeSettings,
-        SettingsService, TaskActor, TaskService,
+        run_agent_runtime, AgentRuntime, ApprovalService, ConversationService, MessagingService,
+        RoutineService, RuntimeSettings, SettingsService, TaskActor, TaskService,
     },
     domain::{
-        agents::{Agent, IdentityColor, NewAgent},
+        agents::{Agent, AgentStatus, IdentityColor, NewAgent},
+        approvals::ApprovalStatus,
         conversations::MessageRole,
         events::{DomainEvent, EventType},
         routines::{NewRoutine, RoutineSchedule},
@@ -19,15 +20,16 @@ use open_bots_lib::{
     },
     error::AppResult,
     infrastructure::database::{
-        AgentRepository, Database, SqliteAgentRepository, SqliteConversationRepository,
-        SqliteEventRepository, SqliteMemoryRepository, SqliteRoutineRepository,
-        SqliteSettingsRepository, SqliteTaskRepository, SqliteWakeRepository,
+        AgentRepository, Database, SqliteAgentRepository, SqliteApprovalRepository,
+        SqliteConversationRepository, SqliteEventRepository, SqliteMemoryRepository,
+        SqliteRoutineRepository, SqliteSettingsRepository, SqliteTaskRepository,
+        SqliteWakeRepository,
     },
     providers::{
         AgentProvider, DetectionStatus, ProviderCapability, ProviderKind, ProviderRegistry,
         ProviderSummary, TurnEvent, TurnEvents, TurnOutcome, TurnRequest,
     },
-    runtime::{cancellation::CancellationSignal, event_bus::EventBus},
+    runtime::{cancellation::CancellationSignal, event_bus::EventBus, turn_tokens::TurnContext},
 };
 use tempfile::TempDir;
 use tokio::sync::broadcast;
@@ -87,6 +89,9 @@ struct TestHarness {
     routines: RoutineService,
     tasks: TaskService,
     settings: Arc<SettingsService>,
+    approvals: ApprovalService,
+    messaging: MessagingService,
+    agents: Arc<SqliteAgentRepository>,
     provider: Arc<RecordingProvider>,
     subscriber: broadcast::Receiver<DomainEvent>,
 }
@@ -133,11 +138,14 @@ impl TestHarness {
         let settings = Arc::new(SettingsService::new(Arc::new(
             SqliteSettingsRepository::new(Arc::clone(&database)),
         )));
+        let wakes = Arc::new(SqliteWakeRepository::new(Arc::clone(&database)));
+        let approval_repository = Arc::new(SqliteApprovalRepository::new(database));
         let runtime = Arc::new(AgentRuntime::new(
-            Arc::new(SqliteWakeRepository::new(database)),
+            wakes.clone(),
             agents.clone(),
             routine_repository.clone(),
             task_repository.clone(),
+            approval_repository.clone(),
             Arc::clone(&settings),
             Arc::clone(&conversations),
             events.clone(),
@@ -152,7 +160,20 @@ impl TestHarness {
                 events.clone(),
                 event_bus.clone(),
             ),
-            tasks: TaskService::new(task_repository, agents, events, event_bus.clone()),
+            tasks: TaskService::new(
+                task_repository,
+                agents.clone(),
+                events.clone(),
+                event_bus.clone(),
+            ),
+            approvals: ApprovalService::new(
+                approval_repository,
+                agents.clone(),
+                events.clone(),
+                event_bus.clone(),
+            ),
+            messaging: MessagingService::new(agents.clone(), wakes, events, event_bus.clone()),
+            agents,
             subscriber: event_bus.subscribe(),
             atlas,
             nova,
@@ -308,4 +329,73 @@ async fn wakes_wait_for_a_running_turn() {
     assert_eq!(prompts.len(), 2);
     assert!(prompts[0].contains("Start on the docs"));
     assert!(prompts[1].contains("Task assigned to you"));
+}
+
+#[tokio::test]
+async fn pending_approvals_hold_the_agent_until_the_user_decides() {
+    let mut harness = TestHarness::new();
+    let atlas = harness.atlas.clone();
+    harness
+        .conversations
+        .send(atlas.id, "Ship the release")
+        .expect("send");
+    // The approval arrives during the turn, as an approval_request tool call would.
+    let approval = harness
+        .approvals
+        .request(atlas.id, "git push origin main", "Release 1.2")
+        .expect("request");
+    harness.next(EventType::AgentWaiting, &atlas).await;
+    assert_eq!(
+        harness
+            .agents
+            .find(atlas.id)
+            .expect("find")
+            .expect("agent")
+            .status,
+        AgentStatus::Waiting
+    );
+
+    harness
+        .approvals
+        .resolve(approval.id, ApprovalStatus::Approved)
+        .expect("resolve");
+    harness.next(EventType::AgentCompleted, &atlas).await;
+
+    let prompts = harness.prompts_for(&atlas);
+    assert_eq!(prompts.len(), 2);
+    assert!(prompts[1].contains("was approved"));
+    assert!(prompts[1].contains("git push origin main"));
+    assert_eq!(
+        harness
+            .agents
+            .find(atlas.id)
+            .expect("find")
+            .expect("agent")
+            .status,
+        AgentStatus::Idle
+    );
+}
+
+#[tokio::test]
+async fn agent_messages_wake_the_recipient() {
+    let mut harness = TestHarness::new();
+    let (atlas, nova) = (harness.atlas.clone(), harness.nova.clone());
+    let wake = harness
+        .messaging
+        .send(
+            TurnContext {
+                agent_id: atlas.id,
+                chain_depth: 2,
+            },
+            nova.id,
+            "The schema changed; please rebase.",
+            None,
+        )
+        .expect("send");
+    assert_eq!(wake.chain_depth, 3);
+    harness.next(EventType::AgentCompleted, &nova).await;
+
+    let prompt = &harness.prompts_for(&nova)[0];
+    assert!(prompt.contains("Message from Atlas."));
+    assert!(prompt.contains("The schema changed; please rebase."));
 }
