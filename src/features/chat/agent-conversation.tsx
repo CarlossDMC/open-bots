@@ -65,7 +65,7 @@ export function AgentConversation({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border-subtle px-4">
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border-subtle px-5">
         <AgentAvatar
           color={agent.identityColor}
           variant={agent.avatarVariant}
@@ -73,23 +73,32 @@ export function AgentConversation({
           status={agent.status}
           size="sm"
         />
-        <h1 className="truncate text-sm font-medium text-foreground">{agent.name}</h1>
-        <AnimatePresence mode="wait" initial={false}>
-          <m.span
-            key={agent.status}
-            variants={fadeUp}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-          >
-            <StatusBadge status={agent.status} className="text-2xs" />
-          </m.span>
-        </AnimatePresence>
-        {agent.model && (
-          <span className="truncate text-2xs text-foreground-faint" title="Model">
-            {describeModel(agent)}
-          </span>
-        )}
+        <div className="min-w-0">
+          <h1 className="truncate text-sm font-medium leading-5 text-foreground">{agent.name}</h1>
+          <div className="flex min-w-0 items-center gap-1.5 text-xs-plus leading-4">
+            <AnimatePresence mode="wait" initial={false}>
+              <m.span
+                key={agent.status}
+                variants={fadeUp}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                <StatusBadge status={agent.status} className="text-xs-plus" />
+              </m.span>
+            </AnimatePresence>
+            {agent.model && (
+              <>
+                <span className="text-foreground-faint" aria-hidden="true">
+                  ·
+                </span>
+                <span className="truncate text-foreground-faint" title="Model">
+                  {describeModel(agent)}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
         <button
           type="button"
           onClick={() => setShowDetails((current) => !current)}
@@ -97,13 +106,13 @@ export function AgentConversation({
           aria-pressed={showDetails}
           title="Agent details"
           className={cn(
-            "ml-auto grid size-7 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "ml-auto grid size-8 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             showDetails
               ? "bg-accent text-foreground"
               : "text-foreground-subtle hover:bg-muted hover:text-foreground"
           )}
         >
-          <Info size={15} strokeWidth={1.8} />
+          <Info size={16} strokeWidth={1.8} />
         </button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -112,7 +121,7 @@ export function AgentConversation({
             <AgentDetails agent={agent} provider={provider} onAgentUpdated={onAgentUpdated} />
           </div>
         ) : (
-          <ol className="mx-auto max-w-3xl space-y-4 px-8 py-8" aria-label="Conversation">
+          <ol className="mx-auto max-w-3xl space-y-5 px-8 py-8" aria-label="Conversation">
             <TimelineEntry
               icon={Sparkles}
               text={`Created as ${agent.role}`}
@@ -236,7 +245,7 @@ function MessageEntry({
       <m.li {...motionProps} className="flex items-start gap-3 text-xs text-foreground-subtle">
         <Info size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1 whitespace-pre-wrap">{message.content}</span>
-        <span className="shrink-0 text-2xs text-foreground-faint">{time}</span>
+        <span className="shrink-0 text-xs-plus text-foreground-faint">{time}</span>
       </m.li>
     );
   }
@@ -245,15 +254,15 @@ function MessageEntry({
       <m.li {...motionProps} className="flex justify-end">
         <div className="max-w-[80%] rounded-2xl rounded-br-md bg-muted px-3.5 py-2">
           <p className="whitespace-pre-wrap text-sm text-foreground">{message.content}</p>
-          <p className="mt-1 text-right text-2xs text-foreground-faint">{time}</p>
+          <p className="mt-1 text-right text-xs-plus text-foreground-faint">{time}</p>
         </div>
       </m.li>
     );
   }
   return (
     <m.li {...motionProps}>
-      <p className="mb-1 text-2xs text-foreground-faint">
-        {agentName} · {time}
+      <p className="mb-1 text-xs-plus text-foreground-faint">
+        <span className="font-medium text-foreground-muted">{agentName}</span> · {time}
       </p>
       <p className="whitespace-pre-wrap text-sm leading-6 text-foreground-secondary">
         {message.content}
@@ -272,10 +281,10 @@ function TimelineEntry({
   time: string;
 }) {
   return (
-    <li className="flex items-start gap-3 text-sm">
-      <Icon size={14} className="mt-0.5 shrink-0 text-foreground-faint" aria-hidden="true" />
+    <li className="flex items-center gap-3 text-xs">
+      <Icon size={13} className="shrink-0 text-foreground-faint" aria-hidden="true" />
       <span className="min-w-0 flex-1 text-foreground-muted">{text}</span>
-      <span className="shrink-0 text-2xs text-foreground-faint">{time}</span>
+      <span className="shrink-0 text-xs-plus text-foreground-faint">{time}</span>
     </li>
   );
 }
@@ -327,7 +336,7 @@ function Composer({
       <form className="mx-auto max-w-3xl" onSubmit={handleSubmit}>
         <div
           className={cn(
-            "flex items-end gap-2 rounded-2xl border border-border bg-card py-1.5 pl-4 pr-1.5",
+            "flex items-end gap-2 rounded-2xl border border-border bg-card py-2 pl-4 pr-2",
             unavailableReason && "opacity-80"
           )}
         >
@@ -389,7 +398,7 @@ function Composer({
           id="composer-status"
           role={error ? "alert" : undefined}
           className={cn(
-            "mt-1.5 min-h-4 text-center text-2xs",
+            "mt-2 min-h-4 text-center text-xs-plus",
             error ? "text-danger-foreground" : "text-foreground-faint"
           )}
         >

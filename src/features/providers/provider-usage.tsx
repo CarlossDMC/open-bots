@@ -78,7 +78,7 @@ export function UsageIndicator({ usage }: { usage: ProviderUsageState }) {
             ))}
           </div>
         ) : (
-          <span className="flex items-center gap-2 text-2xs text-foreground-faint">
+          <span className="flex items-center gap-2 text-xs-plus text-foreground-faint">
             <Gauge size={13} strokeWidth={1.8} aria-hidden="true" />
             {label}
           </span>
@@ -116,7 +116,7 @@ export function UsageIndicator({ usage }: { usage: ProviderUsageState }) {
 function SidebarRow({ report }: { report: ProviderUsageReport }) {
   const windows = report.usage ? primaryWindows(report.usage) : [];
   return (
-    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 text-2xs">
+    <div className="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-2 text-xs-plus">
       <span className="truncate text-foreground-subtle" title={report.providerName}>
         {providerShortName(report.providerName)}
       </span>

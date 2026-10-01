@@ -54,8 +54,8 @@ export function Sidebar({
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-r border-border-subtle bg-surface">
-      <div className="flex h-11 items-center justify-between pl-4 pr-2">
-        <span className="text-xs font-medium text-foreground-subtle">Open Bots</span>
+      <div className="flex h-12 items-center justify-between pl-4 pr-2">
+        <span className="text-sm font-semibold text-foreground">Open Bots</span>
         <button
           type="button"
           onClick={onCreateAgent}
@@ -70,7 +70,7 @@ export function Sidebar({
         <label className="relative block">
           <span className="sr-only">Search agents</span>
           <Search
-            size={14}
+            size={15}
             className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-foreground-faint"
             aria-hidden="true"
           />
@@ -79,11 +79,11 @@ export function Sidebar({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search"
-            className="h-8 w-full rounded-lg border border-border bg-card pl-8 pr-3 text-sm text-foreground outline-none placeholder:text-foreground-faint focus:border-border-strong focus:ring-1 focus:ring-ring/40"
+            className="h-9 w-full rounded-md border border-border bg-card pl-8 pr-3 text-sm text-foreground outline-none placeholder:text-foreground-faint focus:border-border-strong focus:ring-1 focus:ring-ring/40"
           />
         </label>
         {isDemo && (
-          <p className="mt-2 rounded-md border border-warning-border bg-warning-muted px-2 py-1.5 text-2xs text-warning-foreground">
+          <p className="mt-2 rounded-md border border-warning-border bg-warning-muted px-2 py-1.5 text-xs-plus text-warning-foreground">
             Browser preview uses demonstration data.
           </p>
         )}
@@ -110,7 +110,7 @@ export function Sidebar({
               onClick={() => onSelectAgent(agent)}
               aria-current={active === "chat" && agent.id === selectedAgentId ? "page" : undefined}
               className={cn(
-                "flex h-14 w-full items-center gap-3 rounded-lg px-2.5 text-left transition-colors",
+                "flex h-[3.75rem] w-full items-center gap-3 rounded-lg px-2.5 text-left transition-colors",
                 active === "chat" && agent.id === selectedAgentId ? "bg-accent" : "hover:bg-muted"
               )}
             >
@@ -123,12 +123,12 @@ export function Sidebar({
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-sm text-foreground">{agent.name}</span>
-                  <span className="shrink-0 text-2xs text-foreground-faint">
+                  <span className="truncate text-sm font-medium text-foreground">{agent.name}</span>
+                  <span className="shrink-0 text-xs-plus text-foreground-faint">
                     {formatConversationTime(agent.updatedAt)}
                   </span>
                 </div>
-                <p className="mt-0.5 truncate text-xs text-foreground-subtle">
+                <p className="mt-1 truncate text-xs text-foreground-subtle">
                   {agent.currentTask ?? agent.role}
                 </p>
               </div>
@@ -137,9 +137,9 @@ export function Sidebar({
         )}
       </nav>
       <UsageIndicator usage={usage} />
-      <div className="flex items-center gap-0.5 border-t border-border-subtle px-3 py-2">
+      <div className="flex items-center gap-0.5 border-t border-border-subtle px-3 py-2.5">
         <span
-          className="mr-auto flex items-center gap-2 pl-1 text-2xs text-foreground-faint"
+          className="mr-auto flex items-center gap-2 pl-1 text-xs-plus text-foreground-faint"
           title="Local runtime"
         >
           <span className="size-1.5 rounded-full bg-status-success" /> Local runtime
@@ -153,15 +153,15 @@ export function Sidebar({
             title={label}
             aria-current={active === id ? "page" : undefined}
             className={cn(
-              "relative grid size-6 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "relative grid size-7 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               active === id
                 ? "bg-accent text-foreground"
                 : "text-foreground-subtle hover:bg-muted hover:text-foreground"
             )}
           >
-            <Icon size={13} strokeWidth={1.8} aria-hidden="true" />
+            <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
             {id === "approvals" && (
-              <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-status-waiting" />
+              <span className="absolute right-1 top-1 size-1.5 rounded-full bg-status-waiting" />
             )}
           </button>
         ))}

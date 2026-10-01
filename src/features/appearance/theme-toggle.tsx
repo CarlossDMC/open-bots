@@ -14,7 +14,7 @@ export function ThemeToggle() {
       onClick={toggle}
       aria-label={label}
       title={label}
-      className="relative grid size-6 place-items-center overflow-hidden rounded-md text-foreground-subtle transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="relative grid size-7 place-items-center overflow-hidden rounded-md text-foreground-subtle transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <AnimatePresence initial={false} mode="popLayout">
         <m.span
@@ -25,7 +25,7 @@ export function ThemeToggle() {
           exit="exit"
           className="grid place-items-center"
         >
-          <Icon size={13} strokeWidth={1.8} aria-hidden="true" />
+          <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
         </m.span>
       </AnimatePresence>
     </button>

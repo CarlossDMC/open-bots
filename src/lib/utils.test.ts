@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeError, formatConversationTime, formatRelativeTime, titleCase } from "./utils";
+import { cn, describeError, formatConversationTime, formatRelativeTime, titleCase } from "./utils";
 
 describe("formatRelativeTime", () => {
   it("formats elapsed minutes and hours", () => {
@@ -48,5 +48,14 @@ describe("describeError", () => {
   it("falls back for empty or unknown values", () => {
     expect(describeError("", "fallback")).toBe("fallback");
     expect(describeError({ code: 1 }, "fallback")).toBe("fallback");
+  });
+});
+
+describe("cn", () => {
+  it("treats custom font sizes as sizes, not colors", () => {
+    expect(cn("text-xs text-foreground-muted", "text-xs-plus")).toBe(
+      "text-foreground-muted text-xs-plus"
+    );
+    expect(cn("text-2xs", "text-foreground-faint")).toBe("text-2xs text-foreground-faint");
   });
 });
