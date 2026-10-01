@@ -15,13 +15,17 @@ A provider is an interchangeable adapter that runs inference for an agent. Runti
 | `list_models`  | `model_selection` | The model catalog shown in the model picker.                                |
 | `read_usage`   | `usage_limits`    | Rate-limit windows shown in the usage panel. Read on demand only.           |
 
-`run_turn` receives a `TurnRequest` (prompt, workspace, access, previous session, model, effort) and sends events while it runs:
+`run_turn` receives a `TurnRequest` (prompt, workspace, access, previous session, model, effort, and runtime tools endpoint) and sends events while it runs:
 
 - `SessionStarted` as soon as the provider session id is known, so it is saved even if the turn fails later.
 - `Message` for every complete agent message. Do not send partial text deltas; each one becomes a chat message.
 - `ActionStarted` and `ActionCompleted` for tool calls, with a short summary such as the shell command.
 
 It returns a `TurnOutcome` with the session id to resume next time, or an `AppError::Provider` with a user-readable reason. A cancelled turn returns `cancelled: true`, not an error.
+
+### Runtime tools
+
+An adapter that declares `runtime_tools` receives `TurnRequest.runtime_tools` with the URL of the local Open Bots MCP server and a per-turn bearer token. Register the server under the name in `RUNTIME_TOOLS_SERVER_NAME` (`open_bots`), so its tools appear as `mcp__open_bots__<tool>`. Pass the token only through the `RUNTIME_TOOLS_TOKEN_ENV` environment variable on `LineCommand.environment`, never as an argument. The token must reach the server as `Authorization: Bearer <token>`. Pre-approve the server's tools, because turns are non-interactive. Before you declare the capability, verify with a live turn that the CLI can call a tool; see `tests/live_runtime_tools.rs`, which is ignored by default because it makes real model calls.
 
 ## CLI adapters
 

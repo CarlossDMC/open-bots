@@ -15,7 +15,7 @@
 </div>
 
 > [!IMPORTANT]
-> Open Bots is experimental and under active development. The desktop foundation and local agent persistence work today; autonomous agent execution and real provider adapters are still being built.
+> Open Bots is experimental and under active development. Agents run turns through the official Codex and Claude Code CLIs, and they wake for routines, tasks, messages from other agents, and approval decisions while the app is open. Artifacts, background processes, and more providers are still being built.
 
 ## Your agents. Your machine. Your models.
 
@@ -136,19 +136,19 @@ Read the [architecture guide](docs/architecture.md) and [architecture decisions]
 | Agent validation and status transitions | Functional and tested            |
 | Persisted `agent.created` events        | Functional                       |
 | Activity timeline from persisted events | Functional; live via event bus   |
-| Approval persistence and decisions      | Functional; no agent raises them |
-| Per-agent memory notes                  | Sent on a session's first turn   |
-| Scheduled routines (interval, daily)    | Triggers recorded; no execution  |
+| Approvals requested by agents           | Functional; agent waits, resumes |
+| Per-agent memory (user and learned)     | Sent on a session's first turn   |
+| Scheduled routines (interval, daily)    | Run as agent turns while open    |
 | Desktop notifications                   | Replies, approvals, routines     |
 | In-process event bus                    | Functional and tested            |
 | Provider registry                       | Functional                       |
 | Mock provider                           | Functional; makes no model calls |
-| Tasks UI                                | Demonstration data               |
+| Tasks (create, delegate, track)         | Functional and persisted         |
 | OpenAI Codex CLI conversations          | Functional; resumes sessions     |
 | Claude Code CLI conversations           | Functional; resumes sessions     |
 | Workspace writes by agents              | Read-only until permissions UI   |
-| Persistent agent loop                   | Not implemented                  |
-| Agent collaboration and delegation      | Not implemented                  |
+| Event-driven wake loop                  | Functional; chained-turn limit   |
+| Agent collaboration and delegation      | Tasks and messages via MCP tools |
 | Background process execution            | Boundary only                    |
 | Git, PTY, and artifact storage          | Boundary only                    |
 
