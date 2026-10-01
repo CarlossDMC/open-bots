@@ -1,7 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { demoAgents, demoApprovals, demoEvents, demoProviders } from "@/lib/demo-data";
+import {
+  demoAgents,
+  demoApprovals,
+  demoEvents,
+  demoProviders,
+  demoUsageReports
+} from "@/lib/demo-data";
 import type { ResolvedTheme } from "@/lib/theme";
 import type {
   Agent,
@@ -66,9 +72,9 @@ export async function listProviderModels(providerId: string): Promise<ProviderMo
   return invoke<ProviderModel[]>("list_provider_models", { providerId });
 }
 
-/** The browser preview reads no provider accounts, so it reports no usage. */
+/** The browser preview reads no provider accounts; it shows labeled demonstration usage. */
 export async function readProviderUsage(): Promise<ProviderUsageReport[]> {
-  if (!isTauriRuntime()) return [];
+  if (!isTauriRuntime()) return demoUsageReports();
   return invoke<ProviderUsageReport[]>("read_provider_usage");
 }
 

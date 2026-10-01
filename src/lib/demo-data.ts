@@ -3,6 +3,7 @@ import type {
   AgentTask,
   ApprovalRequest,
   ProviderSummary,
+  ProviderUsageReport,
   RuntimeEvent
 } from "@/types/domain";
 
@@ -181,7 +182,44 @@ export const demoProviders: ProviderSummary[] = [
     name: "Claude Code",
     kind: "cli",
     status: "unknown",
-    detail: "Adapter not implemented. Detection is intentionally unavailable.",
+    detail: "Demonstration data. Detection runs only in the desktop app.",
     capabilities: []
   }
 ];
+
+/** Labeled browser-preview usage; the plan reads "demo" so it is never mistaken for real data. */
+export function demoUsageReports(now = new Date()): ProviderUsageReport[] {
+  const inMinutes = (minutes: number) => new Date(now.getTime() + minutes * 60_000).toISOString();
+  const checkedAt = now.toISOString();
+  return [
+    {
+      providerId: "claude-code",
+      providerName: "Claude Code",
+      usage: {
+        providerId: "claude-code",
+        plan: "demo",
+        windows: [
+          { durationMinutes: 300, usedPercent: 14, resetsAt: inMinutes(125) },
+          { durationMinutes: 10080, usedPercent: 85, resetsAt: inMinutes(5_040) },
+          { durationMinutes: 10080, scope: "Fable", usedPercent: 0, resetsAt: inMinutes(5_040) }
+        ],
+        limitReached: false,
+        checkedAt
+      }
+    },
+    {
+      providerId: "codex",
+      providerName: "OpenAI Codex CLI",
+      usage: {
+        providerId: "codex",
+        plan: "demo",
+        windows: [
+          { durationMinutes: 300, usedPercent: 2, resetsAt: inMinutes(250) },
+          { durationMinutes: 10080, usedPercent: 30, resetsAt: null }
+        ],
+        limitReached: false,
+        checkedAt
+      }
+    }
+  ];
+}
