@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatConversationTime, formatRelativeTime, titleCase } from "./utils";
+import { describeError, formatConversationTime, formatRelativeTime, titleCase } from "./utils";
 
 describe("formatRelativeTime", () => {
   it("formats elapsed minutes and hours", () => {
@@ -34,5 +34,19 @@ describe("formatConversationTime", () => {
 describe("titleCase", () => {
   it("formats machine-readable labels", () => {
     expect(titleCase("approval-required")).toBe("Approval Required");
+  });
+});
+
+describe("describeError", () => {
+  it("prefers error messages and command rejection strings", () => {
+    expect(describeError(new Error("disk full"), "fallback")).toBe("disk full");
+    expect(describeError("resource not found: agent", "fallback")).toBe(
+      "resource not found: agent"
+    );
+  });
+
+  it("falls back for empty or unknown values", () => {
+    expect(describeError("", "fallback")).toBe("fallback");
+    expect(describeError({ code: 1 }, "fallback")).toBe("fallback");
   });
 });

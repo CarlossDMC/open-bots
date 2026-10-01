@@ -1,5 +1,7 @@
 import { FolderGit2, Settings2 } from "lucide-react";
 import { AgentAvatar } from "./agent-avatar";
+import { AgentMemorySection } from "./agent-memory";
+import { AgentRoutinesSection } from "./agent-routines";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { titleCase } from "@/lib/utils";
 import type { Agent } from "@/types/domain";
@@ -73,6 +75,8 @@ export function AgentDetails({ agent }: { agent: Agent }) {
             </div>
           </div>
         </section>
+        <AgentRoutinesSection agentId={agent.id} />
+        <AgentMemorySection agentId={agent.id} />
       </div>
     </div>
   );

@@ -1,5 +1,8 @@
 mod agent_repository;
+mod approval_repository;
 mod event_repository;
+mod memory_repository;
+mod routine_repository;
 
 use std::{path::Path, sync::Mutex};
 
@@ -8,7 +11,17 @@ use rusqlite::Connection;
 use crate::error::{AppError, AppResult};
 
 pub use agent_repository::{AgentRepository, SqliteAgentRepository};
+pub use approval_repository::{ApprovalRepository, SqliteApprovalRepository};
 pub use event_repository::{EventRepository, SqliteEventRepository};
+pub use memory_repository::{MemoryRepository, SqliteMemoryRepository};
+pub use routine_repository::{RoutineRepository, SqliteRoutineRepository};
+
+/// Ordered schema migrations. Each entry runs once, when `user_version` is below its version.
+const MIGRATIONS: [(i64, &str); 3] = [
+    (1, include_str!("migrations/0001_initial.sql")),
+    (2, include_str!("migrations/0002_agent_memories.sql")),
+    (3, include_str!("migrations/0003_routines.sql")),
+];
 
 pub struct Database {
     connection: Mutex<Connection>,
@@ -22,7 +35,7 @@ impl Database {
             })?;
         }
         let connection = Connection::open(path)?;
-        connection.execute_batch(include_str!("migrations/0001_initial.sql"))?;
+        migrate(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -31,7 +44,7 @@ impl Database {
     #[cfg(test)]
     pub fn in_memory() -> AppResult<Self> {
         let connection = Connection::open_in_memory()?;
-        connection.execute_batch(include_str!("migrations/0001_initial.sql"))?;
+        migrate(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -46,5 +59,61 @@ impl Database {
             .lock()
             .map_err(|_| AppError::Database(rusqlite::Error::InvalidQuery))?;
         operation(&connection)
+    }
+}
+
+fn migrate(connection: &Connection) -> AppResult<()> {
+    connection.execute_batch("PRAGMA foreign_keys = ON;")?;
+    let current: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    for (version, script) in MIGRATIONS {
+        if current < version {
+            connection.execute_batch(script)?;
+            tracing::info!(version, "database migration applied");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user_version(connection: &Connection) -> i64 {
+        connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("user version")
+    }
+
+    #[test]
+    fn applies_all_migrations_to_a_new_database() {
+        let database = Database::in_memory().expect("database");
+        database
+            .with_connection(|connection| {
+                assert_eq!(user_version(connection), 3);
+                Ok(())
+            })
+            .expect("connection");
+    }
+
+    #[test]
+    fn upgrades_a_version_one_database() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("legacy.sqlite3");
+        {
+            let connection = Connection::open(&path).expect("legacy connection");
+            connection
+                .execute_batch(MIGRATIONS[0].1)
+                .expect("legacy schema");
+            assert_eq!(user_version(&connection), 1);
+        }
+        let database = Database::open(&path).expect("upgraded database");
+        database
+            .with_connection(|connection| {
+                assert_eq!(user_version(connection), 3);
+                connection.prepare("SELECT id FROM agent_memories LIMIT 0")?;
+                connection.prepare("SELECT id FROM routines LIMIT 0")?;
+                Ok(())
+            })
+            .expect("connection");
     }
 }

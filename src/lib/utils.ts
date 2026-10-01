@@ -33,3 +33,10 @@ export function formatConversationTime(isoDate: string, now = new Date()): strin
 export function titleCase(value: string): string {
   return value.replaceAll("-", " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
+
+/** Extracts a readable message from a thrown value; Tauri commands reject with plain strings. */
+export function describeError(caught: unknown, fallback: string): string {
+  if (caught instanceof Error) return caught.message;
+  if (typeof caught === "string" && caught.length > 0) return caught;
+  return fallback;
+}

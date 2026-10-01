@@ -127,23 +127,28 @@ Read the [architecture guide](docs/architecture.md) and [architecture decisions]
 
 ## What works today
 
-| Area                                      | Status                           |
-| ----------------------------------------- | -------------------------------- |
-| Tauri 2 desktop shell                     | Functional                       |
-| React desktop interface                   | Functional                       |
-| Local SQLite initialization               | Functional                       |
-| Create and list agents                    | Functional and persisted         |
-| Agent validation and status transitions   | Functional and tested            |
-| Persisted `agent.created` events          | Functional                       |
-| In-process event bus                      | Functional and tested            |
-| Provider registry                         | Functional                       |
-| Mock provider                             | Functional; makes no model calls |
-| Tasks, activity, and approvals UI         | Demonstration data               |
-| Real provider execution                   | Not implemented                  |
-| Persistent agent loop                     | Not implemented                  |
-| Agent collaboration and delegation        | Not implemented                  |
-| Background process execution              | Boundary only                    |
-| Git, PTY, scheduler, and artifact storage | Boundary only                    |
+| Area                                    | Status                           |
+| --------------------------------------- | -------------------------------- |
+| Tauri 2 desktop shell                   | Functional                       |
+| React desktop interface                 | Functional                       |
+| Local SQLite initialization             | Functional                       |
+| Create and list agents                  | Functional and persisted         |
+| Agent validation and status transitions | Functional and tested            |
+| Persisted `agent.created` events        | Functional                       |
+| Activity timeline from persisted events | Functional; live via event bus   |
+| Approval persistence and decisions      | Functional; no agent raises them |
+| Per-agent memory notes                  | Stored; not sent to providers    |
+| Scheduled routines (interval, daily)    | Triggers recorded; no execution  |
+| Desktop notifications                   | Approvals and routine triggers   |
+| In-process event bus                    | Functional and tested            |
+| Provider registry                       | Functional                       |
+| Mock provider                           | Functional; makes no model calls |
+| Tasks UI                                | Demonstration data               |
+| Real provider execution                 | Not implemented                  |
+| Persistent agent loop                   | Not implemented                  |
+| Agent collaboration and delegation      | Not implemented                  |
+| Background process execution            | Boundary only                    |
+| Git, PTY, and artifact storage          | Boundary only                    |
 
 The browser preview deliberately uses labeled demonstration data because SQLite and Tauri commands are available only in the desktop runtime.
 
@@ -287,18 +292,20 @@ Losing the private key means existing installations can no longer verify new upd
 ### Runtime — next
 
 - [ ] Persistent agent execution loop
-- [ ] Real activity timeline backed by persisted events
+- [x] Real activity timeline backed by persisted events
 - [ ] Task creation, assignment, and state transitions
 - [ ] Provider session lifecycle and resume
 - [ ] Background processes and completion events
-- [ ] Tool permissions and persisted approvals
+- [x] Persisted approvals and decisions
+- [ ] Tool permissions connected to approval requests
 - [ ] Agent-to-agent messages and task delegation
 - [ ] Local artifact storage and exchange
 
 ### Expansion — later
 
 - [ ] Official CLI provider adapters
-- [ ] Git worktrees and scheduler
+- [x] Scheduled routines and desktop notifications
+- [ ] Git worktrees
 - [ ] Remote workers and provider plugins
 - [ ] Optional cloud sync and accounts
 - [ ] Web and mobile control planes

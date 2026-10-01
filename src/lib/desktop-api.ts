@@ -1,8 +1,25 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { demoAgents, demoProviders } from "@/lib/demo-data";
+import { demoAgents, demoApprovals, demoEvents, demoProviders } from "@/lib/demo-data";
 import type { ResolvedTheme } from "@/lib/theme";
-import type { Agent, NewAgentInput, ProviderSummary } from "@/types/domain";
+import type {
+  Agent,
+  AgentMemory,
+  ApprovalDecision,
+  ApprovalRequest,
+  NewAgentInput,
+  NewRoutineInput,
+  ProviderSummary,
+  Routine,
+  RuntimeEvent
+} from "@/types/domain";
+
+/** Mirrors `RUNTIME_EVENT_CHANNEL` in `src-tauri/src/lib.rs`. */
+const runtimeEventChannel = "runtime-event";
+
+/** Browser preview only: memories live in this tab and are lost on reload. */
+const demoMemories = new Map<string, AgentMemory[]>();
 
 export function isTauriRuntime(): boolean {
   return "__TAURI_INTERNALS__" in window;
@@ -38,6 +55,85 @@ export async function createAgent(input: NewAgentInput): Promise<Agent> {
 export async function listProviders(): Promise<ProviderSummary[]> {
   if (!isTauriRuntime()) return demoProviders;
   return invoke<ProviderSummary[]>("list_providers");
+}
+
+export async function listEvents(limit: number): Promise<RuntimeEvent[]> {
+  if (!isTauriRuntime()) return demoEvents;
+  return invoke<RuntimeEvent[]>("list_events", { limit });
+}
+
+/** Subscribes to live runtime events. Resolves to an unsubscribe function. */
+export async function onRuntimeEvent(handler: (event: RuntimeEvent) => void): Promise<() => void> {
+  if (!isTauriRuntime()) return () => undefined;
+  return listen<RuntimeEvent>(runtimeEventChannel, (message) => handler(message.payload));
+}
+
+export async function listApprovals(): Promise<ApprovalRequest[]> {
+  if (!isTauriRuntime()) return demoApprovals;
+  return invoke<ApprovalRequest[]>("list_approvals");
+}
+
+export async function resolveApproval(
+  approval: ApprovalRequest,
+  decision: ApprovalDecision
+): Promise<ApprovalRequest> {
+  if (!isTauriRuntime()) {
+    return { ...approval, status: decision, resolvedAt: new Date().toISOString() };
+  }
+  return invoke<ApprovalRequest>("resolve_approval", { id: approval.id, decision });
+}
+
+export async function listMemories(agentId: string): Promise<AgentMemory[]> {
+  if (!isTauriRuntime()) return demoMemories.get(agentId) ?? [];
+  return invoke<AgentMemory[]>("list_memories", { agentId });
+}
+
+export async function addMemory(agentId: string, content: string): Promise<AgentMemory> {
+  if (!isTauriRuntime()) {
+    const memory: AgentMemory = {
+      id: crypto.randomUUID(),
+      agentId,
+      content: content.trim(),
+      createdAt: new Date().toISOString()
+    };
+    demoMemories.set(agentId, [memory, ...(demoMemories.get(agentId) ?? [])]);
+    return memory;
+  }
+  return invoke<AgentMemory>("add_memory", { agentId, content });
+}
+
+export async function removeMemory(memory: AgentMemory): Promise<void> {
+  if (!isTauriRuntime()) {
+    const remaining = (demoMemories.get(memory.agentId) ?? []).filter(
+      (candidate) => candidate.id !== memory.id
+    );
+    demoMemories.set(memory.agentId, remaining);
+    return;
+  }
+  await invoke("remove_memory", { id: memory.id });
+}
+
+/** Routines are scheduled by the desktop runtime; the browser preview cannot run them. */
+export const routinesUnavailableMessage = "Routines require the desktop runtime.";
+
+export async function listRoutines(agentId: string): Promise<Routine[]> {
+  if (!isTauriRuntime()) return [];
+  return invoke<Routine[]>("list_routines", { agentId });
+}
+
+export async function createRoutine(input: NewRoutineInput): Promise<Routine> {
+  if (!isTauriRuntime()) throw new Error(routinesUnavailableMessage);
+  return invoke<Routine>("create_routine", { input });
+}
+
+export async function setRoutineEnabled(id: string, enabled: boolean): Promise<Routine> {
+  if (!isTauriRuntime()) throw new Error(routinesUnavailableMessage);
+  return invoke<Routine>("set_routine_enabled", { id, enabled });
+}
+
+export async function deleteRoutine(id: string): Promise<void> {
+  if (!isTauriRuntime()) throw new Error(routinesUnavailableMessage);
+  await invoke("delete_routine", { id });
 }
 
 /** Aligns the native title bar with the app theme. `null` lets it follow the operating system. */

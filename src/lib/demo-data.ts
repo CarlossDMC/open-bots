@@ -1,9 +1,9 @@
 import type {
-  ActivityEvent,
   Agent,
   AgentTask,
   ApprovalRequest,
-  ProviderSummary
+  ProviderSummary,
+  RuntimeEvent
 } from "@/types/domain";
 
 const defaultPermissions = {
@@ -96,55 +96,55 @@ export const demoTasks: AgentTask[] = [
   }
 ];
 
-export const demoEvents: ActivityEvent[] = [
+export const demoEvents: RuntimeEvent[] = [
   {
-    id: "event-1",
-    type: "agent.started",
-    subject: "Atlas",
-    detail: "Agent started",
-    occurredAt: "2026-01-10T10:42:00.000Z"
-  },
-  {
-    id: "event-2",
-    type: "task.assigned",
-    subject: "Atlas",
-    detail: "Task assigned: Implement inventory API",
-    occurredAt: "2026-01-10T10:43:00.000Z"
-  },
-  {
-    id: "event-3",
-    type: "tool.started",
-    subject: "Atlas",
-    detail: "Shell command started",
-    occurredAt: "2026-01-10T10:47:00.000Z"
-  },
-  {
-    id: "event-4",
-    type: "process.completed",
-    subject: "Atlas",
-    detail: "Test process completed successfully",
-    occurredAt: "2026-01-10T10:51:00.000Z"
-  },
-  {
-    id: "event-5",
-    type: "artifact.created",
-    subject: "Atlas",
-    detail: "Created api-contract.json",
-    occurredAt: "2026-01-10T10:52:00.000Z"
+    id: "event-7",
+    eventType: "agent.waiting",
+    aggregateId: "demo-nova",
+    payload: { agentId: "demo-nova", detail: "Waiting for approval" },
+    occurredAt: "2026-01-10T10:54:00.000Z"
   },
   {
     id: "event-6",
-    type: "agent.message",
-    subject: "Atlas",
-    detail: "Sent API contract to Nova",
+    eventType: "agent.message",
+    aggregateId: "demo-atlas",
+    payload: { agentId: "demo-atlas", detail: "Sent API contract to Nova" },
     occurredAt: "2026-01-10T10:53:00.000Z"
   },
   {
-    id: "event-7",
-    type: "agent.waiting",
-    subject: "Nova",
-    detail: "Waiting for approval",
-    occurredAt: "2026-01-10T10:54:00.000Z"
+    id: "event-5",
+    eventType: "artifact.created",
+    aggregateId: "demo-atlas",
+    payload: { agentId: "demo-atlas", detail: "Created api-contract.json" },
+    occurredAt: "2026-01-10T10:52:00.000Z"
+  },
+  {
+    id: "event-4",
+    eventType: "process.completed",
+    aggregateId: "demo-atlas",
+    payload: { agentId: "demo-atlas", detail: "Test process completed successfully" },
+    occurredAt: "2026-01-10T10:51:00.000Z"
+  },
+  {
+    id: "event-3",
+    eventType: "tool.started",
+    aggregateId: "demo-atlas",
+    payload: { agentId: "demo-atlas", detail: "Shell command started" },
+    occurredAt: "2026-01-10T10:47:00.000Z"
+  },
+  {
+    id: "event-2",
+    eventType: "task.assigned",
+    aggregateId: "demo-atlas",
+    payload: { agentId: "demo-atlas", detail: "Task assigned: Implement inventory API" },
+    occurredAt: "2026-01-10T10:43:00.000Z"
+  },
+  {
+    id: "event-1",
+    eventType: "agent.started",
+    aggregateId: "demo-atlas",
+    payload: { agentId: "demo-atlas", detail: "Agent started" },
+    occurredAt: "2026-01-10T10:42:00.000Z"
   }
 ];
 
@@ -152,7 +152,6 @@ export const demoApprovals: ApprovalRequest[] = [
   {
     id: "approval-1",
     agentId: "demo-atlas",
-    agentName: "Atlas",
     action: "git push origin feature/inventory",
     reason: "Push the completed inventory implementation for review.",
     status: "pending",

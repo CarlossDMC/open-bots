@@ -70,13 +70,32 @@ export interface ActivityEvent {
   occurredAt: string;
 }
 
+/** A structured runtime event as persisted and published by the desktop runtime. */
+export interface RuntimeEvent {
+  id: string;
+  eventType: string;
+  aggregateId?: string | null;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+}
+
+export type ApprovalStatus = "pending" | "approved" | "denied";
+export type ApprovalDecision = Exclude<ApprovalStatus, "pending">;
+
 export interface ApprovalRequest {
   id: string;
   agentId: string;
-  agentName: string;
   action: string;
   reason: string;
-  status: "pending" | "approved" | "denied";
+  status: ApprovalStatus;
+  createdAt: string;
+  resolvedAt?: string | null;
+}
+
+export interface AgentMemory {
+  id: string;
+  agentId: string;
+  content: string;
   createdAt: string;
 }
 
@@ -87,4 +106,27 @@ export interface ProviderSummary {
   status: "available" | "not-installed" | "unknown";
   detail: string;
   capabilities: string[];
+}
+
+export type RoutineSchedule =
+  { kind: "interval"; minutes: number } | { kind: "daily"; hour: number; minute: number };
+
+export interface Routine {
+  id: string;
+  agentId: string;
+  name: string;
+  instructions: string;
+  schedule: RoutineSchedule;
+  enabled: boolean;
+  nextRunAt: string;
+  lastRunAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewRoutineInput {
+  agentId: string;
+  name: string;
+  instructions: string;
+  schedule: RoutineSchedule;
 }

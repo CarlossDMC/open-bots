@@ -2,6 +2,8 @@ pub mod agents;
 pub mod approvals;
 pub mod artifacts;
 pub mod events;
+pub mod memories;
+pub mod routines;
 pub mod tasks;
 
 use thiserror::Error;

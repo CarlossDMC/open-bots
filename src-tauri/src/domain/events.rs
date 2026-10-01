@@ -57,6 +57,18 @@ pub enum EventType {
     ApprovalApproved,
     #[serde(rename = "approval.denied")]
     ApprovalDenied,
+    #[serde(rename = "memory.added")]
+    MemoryAdded,
+    #[serde(rename = "memory.removed")]
+    MemoryRemoved,
+    #[serde(rename = "routine.created")]
+    RoutineCreated,
+    #[serde(rename = "routine.updated")]
+    RoutineUpdated,
+    #[serde(rename = "routine.deleted")]
+    RoutineDeleted,
+    #[serde(rename = "routine.triggered")]
+    RoutineTriggered,
     #[serde(rename = "process.started")]
     ProcessStarted,
     #[serde(rename = "process.completed")]

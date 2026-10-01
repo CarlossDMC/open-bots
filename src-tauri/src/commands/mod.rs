@@ -1,7 +1,14 @@
 use tauri::State;
+use uuid::Uuid;
 
 use crate::{
-    domain::agents::{Agent, NewAgent},
+    domain::{
+        agents::{Agent, NewAgent},
+        approvals::{ApprovalRequest, ApprovalStatus},
+        events::DomainEvent,
+        memories::AgentMemory,
+        routines::{NewRoutine, Routine},
+    },
     error::AppResult,
     providers::ProviderSummary,
     AppState,
@@ -20,4 +27,66 @@ pub fn create_agent(input: NewAgent, state: State<'_, AppState>) -> AppResult<Ag
 #[tauri::command]
 pub async fn list_providers(state: State<'_, AppState>) -> AppResult<Vec<ProviderSummary>> {
     Ok(state.providers.detect_all().await)
+}
+
+#[tauri::command]
+pub fn list_events(limit: usize, state: State<'_, AppState>) -> AppResult<Vec<DomainEvent>> {
+    state.activity.recent(limit)
+}
+
+#[tauri::command]
+pub fn list_approvals(state: State<'_, AppState>) -> AppResult<Vec<ApprovalRequest>> {
+    state.approvals.list()
+}
+
+#[tauri::command]
+pub fn resolve_approval(
+    id: Uuid,
+    decision: ApprovalStatus,
+    state: State<'_, AppState>,
+) -> AppResult<ApprovalRequest> {
+    state.approvals.resolve(id, decision)
+}
+
+#[tauri::command]
+pub fn list_memories(agent_id: Uuid, state: State<'_, AppState>) -> AppResult<Vec<AgentMemory>> {
+    state.memories.list(agent_id)
+}
+
+#[tauri::command]
+pub fn add_memory(
+    agent_id: Uuid,
+    content: String,
+    state: State<'_, AppState>,
+) -> AppResult<AgentMemory> {
+    state.memories.add(agent_id, &content)
+}
+
+#[tauri::command]
+pub fn remove_memory(id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
+    state.memories.remove(id)
+}
+
+#[tauri::command]
+pub fn list_routines(agent_id: Uuid, state: State<'_, AppState>) -> AppResult<Vec<Routine>> {
+    state.routines.list(agent_id)
+}
+
+#[tauri::command]
+pub fn create_routine(input: NewRoutine, state: State<'_, AppState>) -> AppResult<Routine> {
+    state.routines.create(input)
+}
+
+#[tauri::command]
+pub fn set_routine_enabled(
+    id: Uuid,
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> AppResult<Routine> {
+    state.routines.set_enabled(id, enabled)
+}
+
+#[tauri::command]
+pub fn delete_routine(id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
+    state.routines.delete(id)
 }

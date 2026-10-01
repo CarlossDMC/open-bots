@@ -1,16 +1,20 @@
-import { Database, Download, Monitor, Puzzle, SlidersHorizontal } from "lucide-react";
+import { Bell, Database, Download, Monitor, Puzzle, SlidersHorizontal } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ThemeSelector } from "@/features/appearance/theme-selector";
+import { NotificationSettings } from "@/features/settings/notification-settings";
 import { UpdateSettings } from "@/features/updates/update-settings";
 import type { AppUpdater } from "@/hooks/use-app-updater";
+import type { Notifications } from "@/hooks/use-notifications";
 import type { ProviderSummary } from "@/types/domain";
 
 export function SettingsPage({
   providers,
-  updater
+  updater,
+  notifications
 }: {
   providers: ProviderSummary[];
   updater: AppUpdater;
+  notifications: Notifications;
 }) {
   return (
     <div className="animate-fade-in">
@@ -58,6 +62,9 @@ export function SettingsPage({
         <SettingsCard icon={Database} title="Data">
           <Row name="Storage" value="Local SQLite" />
           <Row name="Cloud sync" value="Not implemented" />
+        </SettingsCard>
+        <SettingsCard icon={Bell} title="Notifications">
+          <NotificationSettings notifications={notifications} />
         </SettingsCard>
         <SettingsCard icon={Download} title="Updates">
           <UpdateSettings updater={updater} />

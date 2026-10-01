@@ -30,15 +30,23 @@ Provider authentication should remain owned by official provider software whenev
 
 ### Events
 
-`EventBus` is an in-process broadcast channel for structured domain events. Important events are also stored through the event repository for activity history. Durable wake-up delivery and replay are future work.
+`EventBus` is an in-process broadcast channel for structured domain events. Important events are also stored through the event repository for activity history. The desktop shell forwards every bus event to the frontend on the `runtime-event` channel so the activity timeline and approvals update live. Durable wake-up delivery and replay are future work.
 
 ### Tools and approvals
 
-Tools declare an identifier, description, input contract, required permission, and structured result. `ApprovalPolicy` maps action context to `ALLOW`, `ASK`, or `DENY`. Tool execution is not yet connected to an agent loop.
+Tools declare an identifier, description, input contract, required permission, and structured result. `ApprovalPolicy` maps action context to `ALLOW`, `ASK`, or `DENY`. `ApprovalRequest` owns its transitions: a pending request resolves once, to approved or denied. `ApprovalService` persists requests and decisions and publishes `approval.requested`, `approval.approved`, and `approval.denied`. Tool execution is not yet connected to an agent loop, so nothing raises approval requests at runtime yet.
 
 ### Persistence
 
-SQLite stores application state. SQL is restricted to repository implementations and migrations. Artifacts will store metadata in SQLite and content as local files; only the domain boundary exists today.
+SQLite stores application state. SQL is restricted to repository implementations and migrations. Migrations are ordered scripts applied once each based on SQLite `user_version`. Artifacts will store metadata in SQLite and content as local files; only the domain boundary exists today. Agent memories are short local notes in `agent_memories`; they will be added to provider system instructions once sessions exist.
+
+### Routines
+
+A routine is recurring work for one agent: a name, instructions, and an interval (5 minutes to 7 days) or a daily local time. Each agent can have up to 50. `Routine` owns the scheduling rules. Runs missed while the application was closed collapse into a single run on the next start, and re-enabling a paused routine schedules it from that moment. `run_routine_scheduler` sleeps until the earliest due routine, capped at five minutes so clock changes and system sleep are noticed, and wakes early when routines change. It reads local state only and never calls a model. A due routine publishes `routine.triggered`; agents do not execute routine instructions until provider sessions exist.
+
+### Notifications
+
+The frontend turns `approval.requested` and `routine.triggered` runtime events into desktop notifications through the official Tauri notification plugin, only while the window is in the background. The preference is stored per device in browser storage.
 
 ### System infrastructure
 

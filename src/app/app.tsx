@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CommandPalette } from "./command-palette";
 import { Sidebar, type ViewId } from "./sidebar";
 import { ActivityPage } from "@/features/activity/activity-page";
@@ -9,10 +9,30 @@ import { SettingsPage } from "@/features/settings/settings-page";
 import { TasksPage } from "@/features/tasks/tasks-page";
 import { UpdateBanner } from "@/features/updates/update-banner";
 import { useAppUpdater } from "@/hooks/use-app-updater";
+import { useNotifications } from "@/hooks/use-notifications";
+import { useRuntimeEvents } from "@/hooks/use-runtime-events";
 import { useTheme } from "@/hooks/use-theme";
-import { createAgent, listAgents, listProviders } from "@/lib/desktop-api";
-import { demoApprovals, demoEvents, demoProviders, demoTasks } from "@/lib/demo-data";
-import type { Agent, ApprovalRequest, NewAgentInput, ProviderSummary } from "@/types/domain";
+import { mergeRuntimeEvent, toActivityEvent } from "@/lib/activity";
+import { describeError } from "@/lib/utils";
+import {
+  createAgent,
+  listAgents,
+  listApprovals,
+  listEvents,
+  listProviders,
+  resolveApproval
+} from "@/lib/desktop-api";
+import { demoProviders, demoTasks } from "@/lib/demo-data";
+import type {
+  Agent,
+  ApprovalDecision,
+  ApprovalRequest,
+  NewAgentInput,
+  ProviderSummary,
+  RuntimeEvent
+} from "@/types/domain";
+
+const activityLimit = 200;
 
 export function App() {
   const [view, setView] = useState<ViewId>("chat");
@@ -25,8 +45,12 @@ export function App() {
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>(demoApprovals);
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
+  const [approvalError, setApprovalError] = useState<string>();
+  const [events, setEvents] = useState<RuntimeEvent[]>([]);
+  const [activityError, setActivityError] = useState<string>();
   const updater = useAppUpdater();
+  const notifications = useNotifications();
   const { toggle: toggleTheme } = useTheme();
 
   const load = useCallback(async () => {
@@ -38,19 +62,41 @@ export function App() {
       setProviders(providerResult);
       setError(undefined);
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "The local application state could not be loaded."
-      );
+      setError(describeError(caught, "The local application state could not be loaded."));
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const loadApprovals = useCallback(async () => {
+    try {
+      setApprovals(await listApprovals());
+      setApprovalError(undefined);
+    } catch (caught) {
+      setApprovalError(describeError(caught, "Approvals could not be loaded."));
+    }
+  }, []);
+
+  const loadActivity = useCallback(async () => {
+    try {
+      setEvents(await listEvents(activityLimit));
+      setActivityError(undefined);
+    } catch (caught) {
+      setActivityError(describeError(caught, "Activity could not be loaded."));
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadApprovals();
+    void loadActivity();
+  }, [load, loadApprovals, loadActivity]);
+
+  useRuntimeEvents((event) => {
+    setEvents((current) => mergeRuntimeEvent(current, event, activityLimit));
+    if (event.eventType.startsWith("approval.")) void loadApprovals();
+    notifications.notifyFor(event, agents);
+  });
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -78,19 +124,38 @@ export function App() {
     setSelectedAgentId(agent.id);
     setView("chat");
   }
-  function resolveApproval(id: string, status: "approved" | "denied") {
-    setApprovals((current) =>
-      current.map((approval) => (approval.id === id ? { ...approval, status } : approval))
-    );
+  async function handleResolveApproval(approval: ApprovalRequest, decision: ApprovalDecision) {
+    try {
+      const resolved = await resolveApproval(approval, decision);
+      setApprovals((current) =>
+        current.map((candidate) => (candidate.id === resolved.id ? resolved : candidate))
+      );
+      setApprovalError(undefined);
+    } catch (caught) {
+      setApprovalError(describeError(caught, "The decision could not be saved."));
+    }
   }
 
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
+  const activity = useMemo(
+    () => events.map((event) => toActivityEvent(event, agents)),
+    [events, agents]
+  );
   let page: React.ReactNode;
   if (view === "tasks") page = <TasksPage tasks={demoTasks} agents={agents} />;
-  else if (view === "activity") page = <ActivityPage events={demoEvents} />;
+  else if (view === "activity") page = <ActivityPage events={activity} error={activityError} />;
   else if (view === "approvals")
-    page = <ApprovalsPage approvals={approvals} onResolve={resolveApproval} />;
-  else if (view === "settings") page = <SettingsPage providers={providers} updater={updater} />;
+    page = (
+      <ApprovalsPage
+        approvals={approvals}
+        agents={agents}
+        isDemo={isDemo}
+        error={approvalError}
+        onResolve={(approval, decision) => void handleResolveApproval(approval, decision)}
+      />
+    );
+  else if (view === "settings")
+    page = <SettingsPage providers={providers} updater={updater} notifications={notifications} />;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
