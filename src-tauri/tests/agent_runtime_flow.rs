@@ -386,6 +386,7 @@ async fn agent_messages_wake_the_recipient() {
             TurnContext {
                 agent_id: atlas.id,
                 chain_depth: 2,
+                group_id: None,
             },
             nova.id,
             "The schema changed; please rebase.",
@@ -410,6 +411,7 @@ async fn an_agent_reply_wakes_the_original_sender() {
             TurnContext {
                 agent_id: atlas.id,
                 chain_depth: 0,
+                group_id: None,
             },
             nova.id,
             "Can you review the schema?",
@@ -424,6 +426,7 @@ async fn an_agent_reply_wakes_the_original_sender() {
             TurnContext {
                 agent_id: nova.id,
                 chain_depth: 1,
+                group_id: None,
             },
             atlas.id,
             "Yes. The schema is ready.",

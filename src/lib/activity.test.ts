@@ -57,6 +57,29 @@ describe("toActivityEvent", () => {
     expect(detail("agent.cancelled")).toBe("Stopped");
   });
 
+  it("describes group events by group name or the posting agent", () => {
+    const created = toActivityEvent(
+      runtimeEvent({
+        eventType: "group.created",
+        aggregateId: "group-1",
+        payload: { groupId: "group-1", name: "Release" }
+      }),
+      demoAgents
+    );
+    expect(created.subject).toBe("Release");
+    expect(created.detail).toBe("Group created");
+    const posted = toActivityEvent(
+      runtimeEvent({
+        eventType: "group.message_created",
+        aggregateId: "group-1",
+        payload: { groupId: "group-1", authorAgentId: "demo-nova" }
+      }),
+      demoAgents
+    );
+    expect(posted.subject).toBe("Nova");
+    expect(posted.detail).toBe("Posted in a group");
+  });
+
   it("describes task events by title", () => {
     const detail = (eventType: string, payload: Record<string, unknown> = {}) =>
       toActivityEvent(runtimeEvent({ eventType, payload }), []).detail;

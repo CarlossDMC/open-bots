@@ -3,6 +3,7 @@ pub mod approvals;
 pub mod artifacts;
 pub mod conversations;
 pub mod events;
+pub mod groups;
 pub mod inbox;
 pub mod mcp_servers;
 pub mod memories;

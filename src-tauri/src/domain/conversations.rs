@@ -15,6 +15,23 @@ pub enum MessageRole {
     System,
 }
 
+/// Which conversation a turn belongs to: the agent's own thread with the user, or a group.
+/// Each scope keeps its own provider session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ConversationScope {
+    Direct,
+    Group(Uuid),
+}
+
+impl ConversationScope {
+    pub fn group_id(&self) -> Option<Uuid> {
+        match self {
+            Self::Direct => None,
+            Self::Group(id) => Some(*id),
+        }
+    }
+}
+
 /// One entry in the conversation between the user and an agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

@@ -186,13 +186,15 @@ pub enum PermissionLevel {
     Denied,
 }
 
+/// New agents may edit their workspace, run commands, and use the internet; each can be
+/// turned off per agent.
 impl Default for AgentPermissions {
     fn default() -> Self {
         Self {
             filesystem: PermissionLevel::WorkspaceOnly,
-            shell: PermissionLevel::ApprovalRequired,
+            shell: PermissionLevel::Allowed,
             git: PermissionLevel::ApprovalRequired,
-            network: PermissionLevel::Restricted,
+            network: PermissionLevel::Allowed,
             browser: PermissionLevel::Denied,
         }
     }
@@ -217,6 +219,11 @@ impl AgentPermissions {
         } else {
             WorkspaceAccess::ReadOnly
         }
+    }
+
+    /// Whether the provider may fetch web pages and search the web during a turn.
+    pub fn network_access(&self) -> bool {
+        self.network == PermissionLevel::Allowed
     }
 }
 
@@ -276,6 +283,28 @@ impl Agent {
     }
 
     /// Like the model, the servers a running turn started with stay until it ends.
+    /// Turns workspace writes (file edits and commands) and internet access on or off.
+    pub fn change_access(&mut self, workspace_write: bool, network: bool) -> DomainResult<()> {
+        if self.status == AgentStatus::Working {
+            return Err(DomainError::Validation(
+                "access cannot change while the agent is working".into(),
+            ));
+        }
+        self.permissions.filesystem = PermissionLevel::WorkspaceOnly;
+        self.permissions.shell = if workspace_write {
+            PermissionLevel::Allowed
+        } else {
+            PermissionLevel::ApprovalRequired
+        };
+        self.permissions.network = if network {
+            PermissionLevel::Allowed
+        } else {
+            PermissionLevel::Restricted
+        };
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
     pub fn change_mcp_servers(&mut self, servers: McpServerSelection) -> DomainResult<()> {
         if self.status == AgentStatus::Working {
             return Err(DomainError::Validation(
@@ -360,7 +389,10 @@ mod tests {
     }
     #[test]
     fn grants_workspace_writes_only_with_unattended_shell() {
-        let mut permissions = AgentPermissions::default();
+        let mut permissions = AgentPermissions {
+            shell: PermissionLevel::ApprovalRequired,
+            ..Default::default()
+        };
         assert_eq!(permissions.workspace_access(), WorkspaceAccess::ReadOnly);
         permissions.shell = PermissionLevel::Allowed;
         assert_eq!(
@@ -369,6 +401,25 @@ mod tests {
         );
         permissions.filesystem = PermissionLevel::Denied;
         assert_eq!(permissions.workspace_access(), WorkspaceAccess::ReadOnly);
+    }
+    #[test]
+    fn new_agents_can_write_and_use_the_internet_until_turned_off() {
+        let mut agent = Agent::create(input()).expect("valid agent");
+        assert_eq!(
+            agent.permissions.workspace_access(),
+            WorkspaceAccess::WorkspaceWrite
+        );
+        assert!(agent.permissions.network_access());
+
+        agent.change_access(false, false).expect("restrict");
+        assert_eq!(
+            agent.permissions.workspace_access(),
+            WorkspaceAccess::ReadOnly
+        );
+        assert!(!agent.permissions.network_access());
+
+        agent.transition_to(AgentStatus::Working).expect("start");
+        assert!(agent.change_access(true, true).is_err());
     }
     #[test]
     fn idle_agents_wait_for_approvals_and_resume() {

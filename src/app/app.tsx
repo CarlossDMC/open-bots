@@ -5,10 +5,13 @@ import { ActivityPage } from "@/features/activity/activity-page";
 import { NewAgentDialog } from "@/features/agents/new-agent-dialog";
 import { AgentConversation, NoConversation } from "@/features/chat/agent-conversation";
 import { ApprovalsPage } from "@/features/approvals/approvals-page";
+import { GroupConversation } from "@/features/groups/group-conversation";
+import { NewGroupDialog } from "@/features/groups/new-group-dialog";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { TasksPage } from "@/features/tasks/tasks-page";
 import { UpdateBanner } from "@/features/updates/update-banner";
 import { useAppUpdater } from "@/hooks/use-app-updater";
+import { useGroups } from "@/hooks/use-groups";
 import { useNotifications } from "@/hooks/use-notifications";
 import { useProviderUsage } from "@/hooks/use-provider-usage";
 import { useRuntimeEvents } from "@/hooks/use-runtime-events";
@@ -20,6 +23,7 @@ import {
   listAgents,
   listApprovals,
   listEvents,
+  isTauriRuntime,
   listProviders,
   resolveApproval
 } from "@/lib/desktop-api";
@@ -28,22 +32,28 @@ import type {
   Agent,
   ApprovalDecision,
   ApprovalRequest,
+  Group,
   NewAgentInput,
+  NewGroupInput,
   ProviderSummary,
   RuntimeEvent
 } from "@/types/domain";
 
 const activityLimit = 200;
 
+/** The conversation shown in the chat view: an agent's own thread or a group. */
+type Selection = { kind: "agent"; id: string } | { kind: "group"; id: string };
+
 export function App() {
   const [view, setView] = useState<ViewId>("chat");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [providers, setProviders] = useState<ProviderSummary[]>(demoProviders);
-  const [selectedAgentId, setSelectedAgentId] = useState<string>();
+  const [selection, setSelection] = useState<Selection>();
   const [isDemo, setIsDemo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [createOpen, setCreateOpen] = useState(false);
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
@@ -54,12 +64,17 @@ export function App() {
   const notifications = useNotifications();
   const usage = useProviderUsage();
   const { toggle: toggleTheme } = useTheme();
+  const groups = useGroups();
 
   const load = useCallback(async () => {
     try {
       const [agentResult, providerResult] = await Promise.all([listAgents(), listProviders()]);
       setAgents(agentResult.agents);
-      setSelectedAgentId((current) => current ?? agentResult.agents[0]?.id);
+      setSelection((current) => {
+        if (current) return current;
+        const first = agentResult.agents[0];
+        return first ? { kind: "agent", id: first.id } : undefined;
+      });
       setIsDemo(agentResult.isDemo);
       setProviders(providerResult);
       setError(undefined);
@@ -125,7 +140,7 @@ export function App() {
     try {
       const agent = await createAgent(input, mcpServers);
       setAgents((current) => [agent, ...current]);
-      setSelectedAgentId(agent.id);
+      setSelection({ kind: "agent", id: agent.id });
       setView("chat");
       setCreateOpen(false);
     } finally {
@@ -138,8 +153,30 @@ export function App() {
     );
   }
   function selectAgent(agent: Agent) {
-    setSelectedAgentId(agent.id);
+    setSelection({ kind: "agent", id: agent.id });
     setView("chat");
+  }
+  function selectGroup(group: Group) {
+    setSelection({ kind: "group", id: group.id });
+    setView("chat");
+  }
+  async function handleCreateGroup(input: NewGroupInput) {
+    const group = await groups.create(input);
+    if (group) selectGroup(group);
+    return Boolean(group);
+  }
+  async function handleDeleteGroup(group: Group) {
+    const deleted = await groups.remove(group.id);
+    if (deleted) {
+      setSelection((current) =>
+        current?.kind === "group" && current.id === group.id
+          ? agents[0]
+            ? { kind: "agent", id: agents[0].id }
+            : undefined
+          : current
+      );
+    }
+    return deleted;
   }
   async function handleResolveApproval(approval: ApprovalRequest, decision: ApprovalDecision) {
     try {
@@ -153,7 +190,10 @@ export function App() {
     }
   }
 
+  const selectedAgentId = selection?.kind === "agent" ? selection.id : undefined;
+  const selectedGroupId = selection?.kind === "group" ? selection.id : undefined;
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
+  const selectedGroup = groups.groups.find((group) => group.id === selectedGroupId);
   const activity = useMemo(
     () => events.map((event) => toActivityEvent(event, agents)),
     [events, agents]
@@ -186,13 +226,17 @@ export function App() {
       <Sidebar
         active={view}
         agents={agents}
+        groups={groups.groups}
         selectedAgentId={selectedAgentId}
+        selectedGroupId={selectedGroupId}
         isDemo={isDemo}
         loading={loading}
         error={error}
         onNavigate={setView}
         onSelectAgent={selectAgent}
+        onSelectGroup={selectGroup}
         onCreateAgent={() => setCreateOpen(true)}
+        onCreateGroup={() => setCreateGroupOpen(true)}
         onRetry={() => void load()}
         usage={usage}
       />
@@ -202,6 +246,14 @@ export function App() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-6xl px-8 py-8">{page}</div>
           </div>
+        ) : selectedGroup ? (
+          <GroupConversation
+            key={selectedGroup.id}
+            group={selectedGroup}
+            agents={agents}
+            onDelete={handleDeleteGroup}
+            onOpenAgent={selectAgent}
+          />
         ) : selectedAgent ? (
           <AgentConversation
             key={selectedAgent.id}
@@ -221,11 +273,20 @@ export function App() {
         onClose={() => setCreateOpen(false)}
         onSubmit={handleCreate}
       />
+      <NewGroupDialog
+        open={createGroupOpen}
+        available={isTauriRuntime()}
+        agents={agents}
+        error={groups.error}
+        onClose={() => setCreateGroupOpen(false)}
+        onSubmit={handleCreateGroup}
+      />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         onNavigate={setView}
         onCreateAgent={() => setCreateOpen(true)}
+        onCreateGroup={() => setCreateGroupOpen(true)}
         onToggleTheme={toggleTheme}
       />
     </div>

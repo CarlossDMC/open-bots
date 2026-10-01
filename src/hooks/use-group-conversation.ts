@@ -1,39 +1,37 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRuntimeEvents } from "@/hooks/use-runtime-events";
-import { cancelTurn, listMessages, resetAgentSession, sendMessage } from "@/lib/desktop-api";
+import { listGroupMessages, sendGroupMessage, stopGroup } from "@/lib/desktop-api";
 import { describeError } from "@/lib/utils";
-import type { ConversationMessage, RuntimeEvent } from "@/types/domain";
+import type { GroupMessage, RuntimeEvent } from "@/types/domain";
 
-export interface Conversation {
-  messages: ConversationMessage[];
+export interface GroupConversation {
+  messages: GroupMessage[];
   loading: boolean;
   error?: string;
-  /** The action the agent is running right now, from live `tool.*` events. */
+  /** The action the answering member is running, from live `tool.*` events in this group. */
   currentAction?: string;
   send: (content: string) => Promise<boolean>;
-  cancel: () => Promise<void>;
-  /** Starts a fresh provider session; resolves to false and sets `error` on failure. */
-  resetSession: () => Promise<boolean>;
+  stop: () => Promise<void>;
 }
 
 const turnEndEvents = new Set(["agent.completed", "agent.failed", "agent.cancelled"]);
 
-export function useConversation(agentId: string): Conversation {
-  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+export function useGroupConversation(groupId: string): GroupConversation {
+  const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [currentAction, setCurrentAction] = useState<string>();
 
   const reload = useCallback(async () => {
     try {
-      setMessages(await listMessages(agentId));
+      setMessages(await listGroupMessages(groupId));
       setError(undefined);
     } catch (caught) {
-      setError(describeError(caught, "The conversation could not be loaded."));
+      setError(describeError(caught, "The group could not be loaded."));
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
+  }, [groupId]);
 
   useEffect(() => {
     setLoading(true);
@@ -42,11 +40,8 @@ export function useConversation(agentId: string): Conversation {
   }, [reload]);
 
   useRuntimeEvents((event: RuntimeEvent) => {
-    const eventAgentId = event.payload.agentId ?? event.aggregateId;
-    if (eventAgentId !== agentId) return;
-    if (event.eventType === "message.created") void reload();
-    // Actions in a group turn are shown in the group.
-    else if (event.payload.groupId) return;
+    if (event.payload.groupId !== groupId) return;
+    if (event.eventType === "group.message_created") void reload();
     else if (event.eventType === "tool.started" && typeof event.payload.detail === "string") {
       setCurrentAction(event.payload.detail);
     } else if (event.eventType === "tool.completed" || event.eventType === "tool.failed") {
@@ -57,7 +52,7 @@ export function useConversation(agentId: string): Conversation {
   const send = useCallback(
     async (content: string) => {
       try {
-        const message = await sendMessage(agentId, content);
+        const message = await sendGroupMessage(groupId, content);
         setMessages((current) =>
           current.some((candidate) => candidate.id === message.id) ? current : [...current, message]
         );
@@ -68,27 +63,16 @@ export function useConversation(agentId: string): Conversation {
         return false;
       }
     },
-    [agentId]
+    [groupId]
   );
 
-  const cancel = useCallback(async () => {
+  const stop = useCallback(async () => {
     try {
-      await cancelTurn(agentId);
+      await stopGroup(groupId);
     } catch (caught) {
-      setError(describeError(caught, "The turn could not be stopped."));
+      setError(describeError(caught, "The group could not be stopped."));
     }
-  }, [agentId]);
+  }, [groupId]);
 
-  const resetSession = useCallback(async () => {
-    try {
-      await resetAgentSession(agentId);
-      setError(undefined);
-      return true;
-    } catch (caught) {
-      setError(describeError(caught, "A new session could not be started."));
-      return false;
-    }
-  }, [agentId]);
-
-  return { messages, loading, error, currentAction, send, cancel, resetSession };
+  return { messages, loading, error, currentAction, send, stop };
 }

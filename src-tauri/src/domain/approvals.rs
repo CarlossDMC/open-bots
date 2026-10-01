@@ -98,7 +98,7 @@ impl ApprovalPolicy for DefaultApprovalPolicy {
             // Runtime actions that only touch Open Bots state for the calling agent's team.
             // Asking for approval is itself always allowed; the user decides the action.
             "memory.write" | "task.read" | "task.write" | "agent.read" | "agent.message"
-            | "approval.request" => ApprovalDecision::Allow,
+            | "group.read" | "group.write" | "approval.request" => ApprovalDecision::Allow,
             "git.push" | "deploy.production" => ApprovalDecision::Ask,
             _ => ApprovalDecision::Ask,
         }
@@ -126,6 +126,8 @@ mod tests {
             "task.write",
             "agent.read",
             "agent.message",
+            "group.read",
+            "group.write",
         ] {
             assert_eq!(
                 DefaultApprovalPolicy.evaluate(&ActionContext {

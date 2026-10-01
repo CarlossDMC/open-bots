@@ -8,7 +8,10 @@
 use std::sync::Arc;
 
 use open_bots_lib::{
-    application::{ApprovalService, MemoryService, MessagingService, TaskService, ToolService},
+    application::{
+        ApprovalService, ConversationService, GroupService, MemoryService, MessagingService,
+        TaskService, ToolService,
+    },
     domain::{
         agents::{Agent, IdentityColor, NewAgent, WorkspaceAccess},
         approvals::DefaultApprovalPolicy,
@@ -16,14 +19,15 @@ use open_bots_lib::{
     infrastructure::{
         database::{
             AgentRepository, Database, SqliteAgentRepository, SqliteApprovalRepository,
-            SqliteEventRepository, SqliteMemoryRepository, SqliteTaskRepository,
-            SqliteWakeRepository,
+            SqliteConversationRepository, SqliteEventRepository, SqliteGroupRepository,
+            SqliteMemoryRepository, SqliteTaskRepository, SqliteWakeRepository,
         },
         mcp::McpListener,
         process::{TokioJsonRpcProcessClient, TokioLineProcessRunner},
     },
     providers::{
-        AgentProvider, ClaudeProvider, CodexProvider, RuntimeToolsEndpoint, TurnEvent, TurnRequest,
+        AgentProvider, ClaudeProvider, CodexProvider, ProviderRegistry, RuntimeToolsEndpoint,
+        TurnEvent, TurnRequest,
     },
     runtime::{
         cancellation::CancellationSignal,
@@ -40,6 +44,36 @@ use tokio::sync::mpsc;
 const PROMPT: &str = "Call the Open Bots tool mcp__open_bots__memory_save exactly once with \
     the content \"live check\". If it is not listed directly, look for it under that name. \
     Then reply with the single word DONE.";
+
+/// Groups for tool calls; no provider runs here, so the conversation service has none.
+fn group_service(
+    database: &Arc<Database>,
+    agents: Arc<SqliteAgentRepository>,
+    wakes: Arc<SqliteWakeRepository>,
+    events: Arc<SqliteEventRepository>,
+    event_bus: EventBus,
+) -> Arc<GroupService> {
+    let groups = Arc::new(SqliteGroupRepository::new(Arc::clone(database)));
+    let conversations = Arc::new(
+        ConversationService::new(
+            agents.clone(),
+            Arc::new(SqliteConversationRepository::new(Arc::clone(database))),
+            Arc::new(SqliteMemoryRepository::new(Arc::clone(database))),
+            Arc::new(ProviderRegistry::new()),
+            events.clone(),
+            event_bus.clone(),
+        )
+        .with_groups(groups.clone()),
+    );
+    Arc::new(GroupService::new(
+        groups,
+        agents,
+        wakes,
+        conversations,
+        events,
+        event_bus,
+    ))
+}
 
 async fn run_live_turn(provider: &dyn AgentProvider, model: Option<&str>) {
     let directory = tempfile::tempdir().expect("temporary directory");
@@ -72,12 +106,20 @@ async fn run_live_turn(provider: &dyn AgentProvider, model: Option<&str>) {
         events.clone(),
         event_bus.clone(),
     ));
+    let wakes = Arc::new(SqliteWakeRepository::new(Arc::clone(&database)));
     let messaging = Arc::new(MessagingService::new(
         agents.clone(),
-        Arc::new(SqliteWakeRepository::new(Arc::clone(&database))),
+        wakes.clone(),
         events.clone(),
         event_bus.clone(),
     ));
+    let groups = group_service(
+        &database,
+        agents.clone(),
+        wakes,
+        events.clone(),
+        event_bus.clone(),
+    );
     let approvals = Arc::new(ApprovalService::new(
         Arc::new(SqliteApprovalRepository::new(database)),
         agents.clone(),
@@ -93,6 +135,7 @@ async fn run_live_turn(provider: &dyn AgentProvider, model: Option<&str>) {
             tasks,
             messaging,
             approvals,
+            groups,
         },
     )
     .expect("register tools");
@@ -107,6 +150,7 @@ async fn run_live_turn(provider: &dyn AgentProvider, model: Option<&str>) {
     let token = tokens.issue(TurnContext {
         agent_id: agent.id,
         chain_depth: 0,
+        group_id: None,
     });
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let outcome = provider
@@ -116,6 +160,7 @@ async fn run_live_turn(provider: &dyn AgentProvider, model: Option<&str>) {
                 prompt: PROMPT.into(),
                 workspace: directory.path().to_path_buf(),
                 access: WorkspaceAccess::ReadOnly,
+                network: false,
                 model: model.map(str::to_owned),
                 reasoning_effort: None,
                 runtime_tools: Some(RuntimeToolsEndpoint { url, token }),

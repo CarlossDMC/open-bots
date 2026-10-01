@@ -7,6 +7,7 @@ import {
   Search,
   Settings,
   SunMoon,
+  Users,
   X
 } from "lucide-react";
 import { useEffect } from "react";
@@ -17,12 +18,14 @@ export function CommandPalette({
   onClose,
   onNavigate,
   onCreateAgent,
+  onCreateGroup,
   onToggleTheme
 }: {
   open: boolean;
   onClose: () => void;
   onNavigate: (view: ViewId) => void;
   onCreateAgent: () => void;
+  onCreateGroup: () => void;
   onToggleTheme: () => void;
 }) {
   useEffect(() => {
@@ -66,6 +69,7 @@ export function CommandPalette({
             shortcut="A"
             onClick={() => execute(onCreateAgent)}
           />
+          <Command icon={Users} label="Create Group" onClick={() => execute(onCreateGroup)} />
           <Command
             icon={MessageSquare}
             label="View Agents"

@@ -53,6 +53,21 @@ describe("notificationFor", () => {
     ).toEqual({ title: "An agent", body: "usage limit" });
   });
 
+  it("notifies once per group round instead of once per member", () => {
+    expect(
+      notificationFor(
+        runtimeEvent("agent.completed", { agentId: "demo-atlas", groupId: "group-1" }),
+        demoAgents
+      )
+    ).toBeNull();
+    expect(
+      notificationFor(
+        runtimeEvent("group.round_completed", { groupId: "group-1", name: "Release" }),
+        demoAgents
+      )
+    ).toEqual({ title: "Release", body: "Everyone has answered" });
+  });
+
   it("stays quiet for informational events", () => {
     for (const type of [
       "agent.created",

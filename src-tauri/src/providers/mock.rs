@@ -77,6 +77,7 @@ mod tests {
                     prompt: "hello".into(),
                     workspace: "/tmp".into(),
                     access: WorkspaceAccess::ReadOnly,
+                    network: false,
                     model: None,
                     reasoning_effort: None,
                     runtime_tools: None,

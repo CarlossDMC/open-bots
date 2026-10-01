@@ -8,18 +8,19 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::conversation_prompt::first_turn_prompt;
+use super::conversation_prompt::{first_turn_prompt, group_context, group_transcript};
 use crate::{
     domain::{
         agents::{Agent, AgentStatus},
-        conversations::{ConversationMessage, MessageRole, MAX_MESSAGE_LENGTH},
+        conversations::{ConversationMessage, ConversationScope, MessageRole, MAX_MESSAGE_LENGTH},
         events::{DomainEvent, EventType},
-        inbox::Wake,
+        groups::{Group, GroupAuthor, GroupMessage},
+        inbox::{Wake, WakeOrigin},
     },
     error::{AppError, AppResult},
     infrastructure::database::{
-        AgentRepository, ConversationRepository, EventRepository, McpCatalogRepository,
-        MemoryRepository,
+        AgentRepository, ConversationRepository, EventRepository, GroupRepository,
+        McpCatalogRepository, MemoryRepository,
     },
     providers::{
         AgentProvider, ProviderCapability, ProviderRegistry, RuntimeToolsEndpoint, TurnEvent,
@@ -36,6 +37,8 @@ use crate::{
 pub const CONVERSATION_HISTORY_LIMIT: usize = 200;
 /// Longest action summary kept in an event payload.
 const MAX_ACTION_SUMMARY: usize = 200;
+/// Most unseen group messages sent with one group turn.
+const GROUP_TRANSCRIPT_LIMIT: usize = 30;
 
 /// Shown where a reset session begins; earlier messages stay visible but not in context.
 const NEW_SESSION_NOTICE: &str =
@@ -48,10 +51,18 @@ pub struct ConversationService {
     providers: Arc<ProviderRegistry>,
     events: Arc<dyn EventRepository>,
     event_bus: EventBus,
-    running: Mutex<HashMap<Uuid, Canceller>>,
+    running: Mutex<HashMap<Uuid, RunningTurn>>,
     chain_depths: Mutex<HashMap<Uuid, u32>>,
     runtime_tools: Option<RuntimeToolsAccess>,
     mcp_catalog: Option<Arc<dyn McpCatalogRepository>>,
+    groups: Option<Arc<dyn GroupRepository>>,
+}
+
+/// An agent's turn in progress. An agent runs one turn at a time, in whichever
+/// conversation woke it, because its workspace and provider CLI are shared.
+struct RunningTurn {
+    canceller: Canceller,
+    scope: ConversationScope,
 }
 
 /// The local MCP server and the token registry it authenticates against.
@@ -80,7 +91,14 @@ impl ConversationService {
             chain_depths: Mutex::new(HashMap::new()),
             runtime_tools: None,
             mcp_catalog: None,
+            groups: None,
         }
+    }
+
+    /// Lets agents take turns in groups. Without it, group wakes fail to start.
+    pub fn with_groups(mut self, groups: Arc<dyn GroupRepository>) -> Self {
+        self.groups = Some(groups);
+        self
     }
 
     /// Lets turns use the agent's MCP servers that are still in the global catalog. Without
@@ -135,23 +153,94 @@ impl ConversationService {
         let message = ConversationMessage::new(agent_id, MessageRole::User, content)?;
         let prompt = message.content.clone();
         // A user message starts a new chain.
-        self.start_turn(agent_id, message, prompt, 0)
+        self.start_turn(
+            agent_id,
+            Some(message.clone()),
+            prompt,
+            0,
+            ConversationScope::Direct,
+        )?;
+        Ok(message)
     }
 
     /// Starts a turn for a wake that did not come from the user. The wake's notice is
     /// recorded in the conversation so the user can see why the agent started working.
+    /// A group wake runs in the group instead, with the messages the agent has not seen.
     pub fn start_wake(self: &Arc<Self>, wake: &Wake) -> AppResult<()> {
+        if let WakeOrigin::GroupTurn { group_id, .. } = &wake.origin {
+            return self.start_group_wake(wake, *group_id);
+        }
         let prompt = wake.prompt();
         let mut notice = ConversationMessage::new(
             wake.agent_id,
             MessageRole::System,
             &bounded(&prompt, MAX_MESSAGE_LENGTH),
         )?;
-        if let crate::domain::inbox::WakeOrigin::AgentMessage { from_agent_id, .. } = &wake.origin {
+        if let WakeOrigin::AgentMessage { from_agent_id, .. } = &wake.origin {
             notice.source_agent_id = Some(*from_agent_id);
         }
-        self.start_turn(wake.agent_id, notice, prompt, wake.chain_depth)
-            .map(|_| ())
+        self.start_turn(
+            wake.agent_id,
+            Some(notice),
+            prompt,
+            wake.chain_depth,
+            ConversationScope::Direct,
+        )
+    }
+
+    fn start_group_wake(self: &Arc<Self>, wake: &Wake, group_id: Uuid) -> AppResult<()> {
+        let group = self.find_group(group_id)?;
+        if !group.is_member(wake.agent_id) {
+            return Err(AppError::Validation(format!(
+                "the agent is not a member of group \"{}\"",
+                group.name
+            )));
+        }
+        let unseen = self.groups()?.messages_since_last_from(
+            group_id,
+            wake.agent_id,
+            GROUP_TRANSCRIPT_LIMIT,
+        )?;
+        let names = self.agent_names()?;
+        let entries: Vec<(String, String)> = unseen
+            .iter()
+            .map(|message| {
+                (
+                    author_label(&message.author, &names),
+                    message.content.clone(),
+                )
+            })
+            .collect();
+        let prompt = if entries.is_empty() {
+            wake.prompt()
+        } else {
+            format!(
+                "{}\n\nNew messages in the group:\n\n{}",
+                wake.prompt(),
+                group_transcript(&entries)
+            )
+        };
+        self.start_turn(
+            wake.agent_id,
+            None,
+            prompt,
+            wake.chain_depth,
+            ConversationScope::Group(group_id),
+        )
+    }
+
+    /// Stops the turn an agent is running in the group, if any. Returns whether one was
+    /// running there.
+    pub fn cancel_in_group(&self, agent_id: Uuid, group_id: Uuid) -> AppResult<bool> {
+        let running = self.lock_running()?;
+        match running.get(&agent_id) {
+            Some(turn) if turn.scope == ConversationScope::Group(group_id) => {
+                turn.canceller.cancel();
+                tracing::info!(agent_id = %agent_id, group_id = %group_id, "group turn cancellation requested");
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
     }
 
     /// Whether the agent has a turn in progress.
@@ -182,10 +271,11 @@ impl ConversationService {
     fn start_turn(
         self: &Arc<Self>,
         agent_id: Uuid,
-        message: ConversationMessage,
+        message: Option<ConversationMessage>,
         prompt: String,
         chain_depth: u32,
-    ) -> AppResult<ConversationMessage> {
+        scope: ConversationScope,
+    ) -> AppResult<()> {
         let mut agent = self.find_agent(agent_id)?;
         let provider = self.providers.get(&agent.provider_id)?;
 
@@ -202,21 +292,23 @@ impl ConversationService {
                 agent.transition_to(AgentStatus::Idle)?;
             }
             agent.transition_to(AgentStatus::Working)?;
-            running.insert(agent_id, canceller);
+            running.insert(agent_id, RunningTurn { canceller, scope });
         }
         if let Ok(mut depths) = self.chain_depths.lock() {
             depths.insert(agent_id, chain_depth);
         }
-        if let Err(error) = self.begin_turn(&agent, &message) {
+        if let Err(error) = self.begin_turn(&agent, message.as_ref(), scope) {
             self.release(agent_id);
             return Err(error);
         }
 
         let service = Arc::clone(self);
         tokio::spawn(async move {
-            service.run_turn(agent, provider, prompt, signal).await;
+            service
+                .run_turn(agent, provider, prompt, signal, scope)
+                .await;
         });
-        Ok(message)
+        Ok(())
     }
 
     /// Forgets the agent's provider sessions, so its next turn starts a fresh session with the
@@ -248,10 +340,10 @@ impl ConversationService {
     /// Stops the agent's running turn. The turn then finishes as cancelled.
     pub fn cancel(&self, agent_id: Uuid) -> AppResult<()> {
         let running = self.lock_running()?;
-        let canceller = running
+        let turn = running
             .get(&agent_id)
             .ok_or_else(|| AppError::Validation("the agent is not working".into()))?;
-        canceller.cancel();
+        turn.canceller.cancel();
         tracing::info!(agent_id = %agent_id, "turn cancellation requested");
         Ok(())
     }
@@ -283,14 +375,25 @@ impl ConversationService {
         Ok(recovered)
     }
 
-    fn begin_turn(&self, agent: &Agent, message: &ConversationMessage) -> AppResult<()> {
+    fn begin_turn(
+        &self,
+        agent: &Agent,
+        message: Option<&ConversationMessage>,
+        scope: ConversationScope,
+    ) -> AppResult<()> {
         self.agents.save(agent)?;
-        self.conversations.append_message(message)?;
-        self.publish_message(message)?;
+        if let Some(message) = message {
+            self.conversations.append_message(message)?;
+            self.publish_message(message)?;
+        }
         self.publish(
             EventType::AgentStarted,
             agent.id,
-            json!({ "name": agent.name, "providerId": agent.provider_id }),
+            json!({
+                "name": agent.name,
+                "providerId": agent.provider_id,
+                "groupId": scope.group_id(),
+            }),
         )?;
         tracing::info!(agent_id = %agent.id, provider_id = %agent.provider_id, "turn started");
         Ok(())
@@ -302,14 +405,48 @@ impl ConversationService {
         provider: Arc<dyn AgentProvider>,
         content: String,
         signal: CancellationSignal,
+        scope: ConversationScope,
     ) {
+        let mut replies = Vec::new();
         let result = self
-            .execute_turn(&agent, provider.as_ref(), &content, signal)
+            .execute_turn(
+                &agent,
+                provider.as_ref(),
+                &content,
+                signal,
+                scope,
+                &mut replies,
+            )
             .await;
         self.release(agent.id);
-        if let Err(error) = self.finish_turn(agent.id, provider.id(), result) {
+        if let Err(error) = self.finish_turn(agent.id, provider.id(), scope, &replies, result) {
             tracing::error!(agent_id = %agent.id, %error, "turn result could not be recorded");
         }
+    }
+
+    /// The first-turn context of a provider session. In a group, it also describes the
+    /// group, so each group session starts knowing its topic and members.
+    fn session_prompt(
+        &self,
+        agent: &Agent,
+        content: &str,
+        scope: ConversationScope,
+        runtime_tools: bool,
+    ) -> AppResult<String> {
+        let memories = self.memories.list_for_agent(agent.id)?;
+        let message = match scope {
+            ConversationScope::Direct => content.to_owned(),
+            ConversationScope::Group(group_id) => {
+                let group = self.find_group(group_id)?;
+                let members = group
+                    .member_ids
+                    .iter()
+                    .filter_map(|id| self.agents.find(*id).transpose())
+                    .collect::<AppResult<Vec<_>>>()?;
+                format!("{}\n\n{content}", group_context(agent, &group, &members))
+            }
+        };
+        Ok(first_turn_prompt(agent, &memories, &message, runtime_tools))
     }
 
     async fn execute_turn(
@@ -318,10 +455,12 @@ impl ConversationService {
         provider: &dyn AgentProvider,
         content: &str,
         signal: CancellationSignal,
+        scope: ConversationScope,
+        replies: &mut Vec<String>,
     ) -> AppResult<TurnOutcome> {
         let session_id = self
             .conversations
-            .provider_session(agent.id, provider.id())?;
+            .provider_session(agent.id, provider.id(), scope)?;
         let runtime_tools = self
             .runtime_tools
             .as_ref()
@@ -335,20 +474,19 @@ impl ConversationService {
                 token: access.tokens.issue(TurnContext {
                     agent_id: agent.id,
                     chain_depth: self.chain_depth(agent.id),
+                    group_id: scope.group_id(),
                 }),
             });
         let prompt = match session_id {
             Some(_) => content.to_owned(),
-            None => {
-                let memories = self.memories.list_for_agent(agent.id)?;
-                first_turn_prompt(agent, &memories, content, runtime_tools.is_some())
-            }
+            None => self.session_prompt(agent, content, scope, runtime_tools.is_some())?,
         };
         let request = TurnRequest {
             session_id,
             prompt,
             workspace: PathBuf::from(&agent.workspace),
             access: agent.permissions.workspace_access(),
+            network: agent.permissions.network_access(),
             model: agent.model_selection.model().map(str::to_owned),
             reasoning_effort: agent.model_selection.reasoning_effort().map(str::to_owned),
             runtime_tools: runtime_tools.clone(),
@@ -357,7 +495,10 @@ impl ConversationService {
         let (sender, mut receiver) = mpsc::unbounded_channel();
         let drain = async {
             while let Some(event) = receiver.recv().await {
-                if let Err(error) = self.record_turn_event(agent.id, provider.id(), event) {
+                if let TurnEvent::Message { text } = &event {
+                    replies.push(text.clone());
+                }
+                if let Err(error) = self.record_turn_event(agent.id, provider.id(), scope, event) {
                     tracing::error!(agent_id = %agent.id, %error, "turn event could not be recorded");
                 }
             }
@@ -373,20 +514,30 @@ impl ConversationService {
         &self,
         agent_id: Uuid,
         provider_id: &str,
+        scope: ConversationScope,
         event: TurnEvent,
     ) -> AppResult<()> {
+        let group_id = scope.group_id();
         match event {
             TurnEvent::SessionStarted { session_id } => {
                 self.conversations
-                    .save_provider_session(agent_id, provider_id, &session_id)
+                    .save_provider_session(agent_id, provider_id, scope, &session_id)
             }
             TurnEvent::Message { text } => {
-                self.append_message(agent_id, MessageRole::Agent, &bounded(&text, MAX_MESSAGE_LENGTH))
+                let text = bounded(&text, MAX_MESSAGE_LENGTH);
+                match group_id {
+                    None => self.append_message(agent_id, MessageRole::Agent, &text),
+                    Some(group_id) => self.append_group_message(
+                        group_id,
+                        GroupAuthor::Agent { agent_id },
+                        &text,
+                    ),
+                }
             }
             TurnEvent::ActionStarted { id, summary } => self.publish(
                 EventType::ToolStarted,
                 agent_id,
-                json!({ "agentId": agent_id, "actionId": id, "detail": bounded(&summary, MAX_ACTION_SUMMARY) }),
+                json!({ "agentId": agent_id, "groupId": group_id, "actionId": id, "detail": bounded(&summary, MAX_ACTION_SUMMARY) }),
             ),
             TurnEvent::ActionCompleted {
                 id,
@@ -399,7 +550,7 @@ impl ConversationService {
                     EventType::ToolFailed
                 },
                 agent_id,
-                json!({ "agentId": agent_id, "actionId": id, "detail": bounded(&summary, MAX_ACTION_SUMMARY) }),
+                json!({ "agentId": agent_id, "groupId": group_id, "actionId": id, "detail": bounded(&summary, MAX_ACTION_SUMMARY) }),
             ),
         }
     }
@@ -408,30 +559,42 @@ impl ConversationService {
         &self,
         agent_id: Uuid,
         provider_id: &str,
+        scope: ConversationScope,
+        replies: &[String],
         result: AppResult<TurnOutcome>,
     ) -> AppResult<()> {
         let mut agent = self.find_agent(agent_id)?;
+        let group_id = scope.group_id();
         match result {
             Ok(outcome) => {
                 if let Some(session_id) = &outcome.session_id {
-                    self.conversations
-                        .save_provider_session(agent_id, provider_id, session_id)?;
+                    self.conversations.save_provider_session(
+                        agent_id,
+                        provider_id,
+                        scope,
+                        session_id,
+                    )?;
                 }
                 agent.transition_to(AgentStatus::Idle)?;
                 self.agents.save(&agent)?;
                 if outcome.cancelled {
-                    self.append_message(agent_id, MessageRole::System, "Stopped.")?;
+                    self.append_scoped_notice(agent_id, scope, "Stopped.")?;
                     self.publish(
                         EventType::AgentCancelled,
                         agent_id,
-                        json!({ "name": agent.name }),
+                        json!({ "name": agent.name, "groupId": group_id }),
                     )?;
                     tracing::info!(agent_id = %agent_id, "turn cancelled");
                 } else {
+                    let mentioned = self.mentioned_in_replies(agent_id, scope, replies)?;
                     self.publish(
                         EventType::AgentCompleted,
                         agent_id,
-                        json!({ "name": agent.name }),
+                        json!({
+                            "name": agent.name,
+                            "groupId": group_id,
+                            "mentionedAgentIds": mentioned,
+                        }),
                     )?;
                     tracing::info!(agent_id = %agent_id, "turn completed");
                 }
@@ -440,20 +603,96 @@ impl ConversationService {
                 agent.transition_to(AgentStatus::Failed)?;
                 self.agents.save(&agent)?;
                 let reason = error.to_string();
-                self.append_message(
-                    agent_id,
-                    MessageRole::System,
-                    &bounded(&format!("The turn failed: {reason}"), MAX_MESSAGE_LENGTH),
-                )?;
+                let notice = match group_id {
+                    None => format!("The turn failed: {reason}"),
+                    Some(_) => format!("{}'s turn failed: {reason}", agent.name),
+                };
+                self.append_scoped_notice(agent_id, scope, &bounded(&notice, MAX_MESSAGE_LENGTH))?;
                 self.publish(
                     EventType::AgentFailed,
                     agent_id,
-                    json!({ "name": agent.name, "detail": bounded(&reason, MAX_ACTION_SUMMARY) }),
+                    json!({
+                        "name": agent.name,
+                        "groupId": group_id,
+                        "detail": bounded(&reason, MAX_ACTION_SUMMARY),
+                    }),
                 )?;
                 tracing::warn!(agent_id = %agent_id, "turn failed");
             }
         }
         Ok(())
+    }
+
+    /// Group members the agent asked to respond with `@Name` in this turn's replies.
+    fn mentioned_in_replies(
+        &self,
+        agent_id: Uuid,
+        scope: ConversationScope,
+        replies: &[String],
+    ) -> AppResult<Vec<Uuid>> {
+        let Some(group_id) = scope.group_id() else {
+            return Ok(Vec::new());
+        };
+        if replies.is_empty() {
+            return Ok(Vec::new());
+        }
+        let group = self.find_group(group_id)?;
+        let names: Vec<(Uuid, String)> = self.agent_names()?.into_iter().collect();
+        Ok(group.speakers_for(
+            GroupAuthor::Agent { agent_id },
+            &replies.join("\n\n"),
+            &names,
+            false,
+        ))
+    }
+
+    /// Records a runtime notice where the turn ran: the agent's conversation or the group.
+    fn append_scoped_notice(
+        &self,
+        agent_id: Uuid,
+        scope: ConversationScope,
+        content: &str,
+    ) -> AppResult<()> {
+        match scope {
+            ConversationScope::Direct => {
+                self.append_message(agent_id, MessageRole::System, content)
+            }
+            ConversationScope::Group(group_id) => {
+                self.append_group_message(group_id, GroupAuthor::System, content)
+            }
+        }
+    }
+
+    fn append_group_message(
+        &self,
+        group_id: Uuid,
+        author: GroupAuthor,
+        content: &str,
+    ) -> AppResult<()> {
+        let message = GroupMessage::new(group_id, author, content)?;
+        self.groups()?.append_message(&message)?;
+        publish_group_message(&*self.events, &self.event_bus, &message)
+    }
+
+    fn groups(&self) -> AppResult<&Arc<dyn GroupRepository>> {
+        self.groups
+            .as_ref()
+            .ok_or_else(|| AppError::Validation("groups are not available".into()))
+    }
+
+    fn find_group(&self, group_id: Uuid) -> AppResult<Group> {
+        self.groups()?
+            .find(group_id)?
+            .ok_or_else(|| AppError::NotFound(format!("group {group_id}")))
+    }
+
+    fn agent_names(&self) -> AppResult<HashMap<Uuid, String>> {
+        Ok(self
+            .agents
+            .list()?
+            .into_iter()
+            .map(|agent| (agent.id, agent.name))
+            .collect())
     }
 
     fn append_message(&self, agent_id: Uuid, role: MessageRole, content: &str) -> AppResult<()> {
@@ -489,7 +728,7 @@ impl ConversationService {
             .ok_or_else(|| AppError::NotFound(format!("agent {agent_id}")))
     }
 
-    fn lock_running(&self) -> AppResult<std::sync::MutexGuard<'_, HashMap<Uuid, Canceller>>> {
+    fn lock_running(&self) -> AppResult<std::sync::MutexGuard<'_, HashMap<Uuid, RunningTurn>>> {
         self.running
             .lock()
             .map_err(|_| AppError::Validation("turn registry is unavailable".into()))
@@ -502,6 +741,39 @@ impl ConversationService {
             }
             Err(_) => tracing::error!(agent_id = %agent_id, "turn registry is unavailable"),
         }
+    }
+}
+
+/// Publishes a stored group message. The content stays in the group table; the event only
+/// identifies it.
+pub(crate) fn publish_group_message(
+    events: &dyn EventRepository,
+    event_bus: &EventBus,
+    message: &GroupMessage,
+) -> AppResult<()> {
+    let event = DomainEvent::new(
+        EventType::GroupMessageCreated,
+        Some(message.group_id),
+        json!({
+            "groupId": message.group_id,
+            "messageId": message.id,
+            "authorAgentId": message.author.agent_id(),
+        }),
+    );
+    events.append(&event)?;
+    event_bus.publish(event);
+    Ok(())
+}
+
+/// How a group message's author appears in a transcript sent to a provider.
+fn author_label(author: &GroupAuthor, names: &HashMap<Uuid, String>) -> String {
+    match author {
+        GroupAuthor::User => "User".into(),
+        GroupAuthor::System => "Open Bots".into(),
+        GroupAuthor::Agent { agent_id } => names
+            .get(agent_id)
+            .cloned()
+            .unwrap_or_else(|| "A former member".into()),
     }
 }
 

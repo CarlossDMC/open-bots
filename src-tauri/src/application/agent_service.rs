@@ -121,6 +121,35 @@ impl AgentService {
     }
 
     /// Applies from the agent's next turn; the provider session is kept.
+    /// Turns the agent's workspace writes and internet access on or off. Changes apply from
+    /// its next turn.
+    pub fn update_access(
+        &self,
+        agent_id: Uuid,
+        workspace_write: bool,
+        network: bool,
+    ) -> AppResult<Agent> {
+        let mut agent = self
+            .agents
+            .find(agent_id)?
+            .ok_or_else(|| AppError::NotFound(format!("agent {agent_id}")))?;
+        agent.change_access(workspace_write, network)?;
+        self.agents.save(&agent)?;
+        let event = DomainEvent::new(
+            EventType::AgentUpdated,
+            Some(agent.id),
+            json!({
+                "name": agent.name,
+                "workspaceWrite": workspace_write,
+                "network": network,
+            }),
+        );
+        self.events.append(&event)?;
+        self.event_bus.publish(event);
+        tracing::info!(agent_id = %agent.id, workspace_write, network, "agent access updated");
+        Ok(agent)
+    }
+
     pub fn update_mcp_servers(&self, agent_id: Uuid, servers: Vec<String>) -> AppResult<Agent> {
         let mut agent = self
             .agents

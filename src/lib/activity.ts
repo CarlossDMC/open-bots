@@ -30,6 +30,14 @@ const taskDetails: Record<string, string> = {
   "task.cancelled": "Task cancelled"
 };
 
+const groupDetails: Record<string, string> = {
+  "group.created": "Group created",
+  "group.deleted": "Group deleted",
+  "group.message_created": "Posted in a group",
+  "group.turn_queued": "Queued to answer in a group",
+  "group.round_completed": "Group finished answering"
+};
+
 const approvalDetails: Record<string, string> = {
   "approval.requested": "Requested approval",
   "approval.approved": "Approval granted",
@@ -58,17 +66,22 @@ export function mergeRuntimeEvent(
 }
 
 function describeSubject(event: RuntimeEvent, agents: Agent[]): string {
-  const agentId = stringField(event.payload, "agentId") ?? event.aggregateId ?? undefined;
+  const agentId =
+    stringField(event.payload, "agentId") ??
+    stringField(event.payload, "authorAgentId") ??
+    event.aggregateId ??
+    undefined;
   const agent = agentId ? agents.find((candidate) => candidate.id === agentId) : undefined;
-  // Only agent events carry the agent's own name; routine events carry the routine name.
-  const payloadName = event.eventType.startsWith("agent.")
-    ? stringField(event.payload, "name")
-    : undefined;
+  // Agent and group events carry their own name; routine events carry the routine name.
+  const payloadName =
+    event.eventType.startsWith("agent.") || event.eventType.startsWith("group.")
+      ? stringField(event.payload, "name")
+      : undefined;
   return agent?.name ?? payloadName ?? "Runtime";
 }
 
 function describeDetail(event: RuntimeEvent): string {
-  const fixed = fixedDetails[event.eventType];
+  const fixed = fixedDetails[event.eventType] ?? groupDetails[event.eventType];
   if (fixed) return fixed;
   const approval = approvalDetails[event.eventType];
   if (approval) {

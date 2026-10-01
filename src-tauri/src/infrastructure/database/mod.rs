@@ -2,6 +2,7 @@ mod agent_repository;
 mod approval_repository;
 mod conversation_repository;
 mod event_repository;
+mod group_repository;
 mod mcp_catalog_repository;
 mod memory_repository;
 mod routine_repository;
@@ -19,6 +20,7 @@ pub use agent_repository::{AgentRepository, SqliteAgentRepository};
 pub use approval_repository::{ApprovalRepository, SqliteApprovalRepository};
 pub use conversation_repository::{ConversationRepository, SqliteConversationRepository};
 pub use event_repository::{EventRepository, SqliteEventRepository};
+pub use group_repository::{GroupRepository, SqliteGroupRepository};
 pub use mcp_catalog_repository::{McpCatalogRepository, SqliteMcpCatalogRepository};
 pub use memory_repository::{MemoryRepository, SqliteMemoryRepository};
 pub use routine_repository::{RoutineRepository, SqliteRoutineRepository};
@@ -27,7 +29,7 @@ pub use task_repository::{SqliteTaskRepository, TaskRepository};
 pub use wake_repository::{SqliteWakeRepository, WakeRepository};
 
 /// Ordered schema migrations. Each entry runs once, when `user_version` is below its version.
-const MIGRATIONS: [(i64, &str); 11] = [
+const MIGRATIONS: [(i64, &str); 13] = [
     (1, include_str!("migrations/0001_initial.sql")),
     (2, include_str!("migrations/0002_agent_memories.sql")),
     (3, include_str!("migrations/0003_routines.sql")),
@@ -42,6 +44,8 @@ const MIGRATIONS: [(i64, &str); 11] = [
         include_str!("migrations/0010_conversation_message_source.sql"),
     ),
     (11, include_str!("migrations/0011_mcp_catalog.sql")),
+    (12, include_str!("migrations/0012_groups.sql")),
+    (13, include_str!("migrations/0013_agent_access.sql")),
 ];
 
 pub struct Database {
@@ -154,6 +158,71 @@ mod tests {
     }
 
     #[test]
+    fn keeps_existing_provider_sessions_as_direct_conversations() {
+        let mut connection = Connection::open_in_memory().expect("connection");
+        connection
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .expect("foreign keys");
+        apply_migrations(&mut connection, &MIGRATIONS[..11]).expect("version 11");
+        connection
+            .execute_batch(
+                "INSERT INTO agents (id, name, role, description, provider_id, identity_color, \
+                   avatar_variant, workspace, status, instructions, permissions_json, \
+                   created_at, updated_at) \
+                 VALUES ('a', 'Atlas', 'Engineer', '', 'codex', 'indigo', 'v', '/w', 'idle', '', \
+                   '{}', 'now', 'now'); \
+                 INSERT INTO provider_sessions (agent_id, provider_id, session_id, updated_at) \
+                 VALUES ('a', 'codex', 'thread-1', 'now');",
+            )
+            .expect("legacy session");
+
+        apply_migrations(&mut connection, &MIGRATIONS[..12]).expect("version 12");
+
+        let (conversation, session): (String, String) = connection
+            .query_row(
+                "SELECT conversation_id, session_id FROM provider_sessions WHERE agent_id = 'a'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("session");
+        assert_eq!((conversation.as_str(), session.as_str()), ("", "thread-1"));
+    }
+
+    #[test]
+    fn switches_existing_agents_to_workspace_writes_and_internet_access() {
+        let mut connection = Connection::open_in_memory().expect("connection");
+        apply_migrations(&mut connection, &MIGRATIONS[..12]).expect("version 12");
+        connection
+            .execute_batch(
+                "INSERT INTO agents (id, name, role, description, provider_id, identity_color, \
+                   avatar_variant, workspace, status, instructions, permissions_json, \
+                   created_at, updated_at) \
+                 VALUES ('a', 'Atlas', 'Engineer', '', 'codex', 'indigo', 'v', '/w', 'idle', '', \
+                   '{\"filesystem\":\"workspace-only\",\"shell\":\"approval-required\",\
+                   \"git\":\"approval-required\",\"network\":\"restricted\",\
+                   \"browser\":\"denied\"}', 'now', 'now');",
+            )
+            .expect("legacy agent");
+
+        apply_migrations(&mut connection, &MIGRATIONS).expect("version 13");
+
+        let permissions: String = connection
+            .query_row("SELECT permissions_json FROM agents", [], |row| row.get(0))
+            .expect("permissions");
+        let permissions: crate::domain::agents::AgentPermissions =
+            serde_json::from_str(&permissions).expect("parsed");
+        assert_eq!(
+            permissions.workspace_access(),
+            crate::domain::agents::WorkspaceAccess::WorkspaceWrite
+        );
+        assert!(permissions.network_access());
+        assert_eq!(
+            permissions.git,
+            crate::domain::agents::PermissionLevel::ApprovalRequired
+        );
+    }
+
+    #[test]
     fn upgrades_a_version_one_database() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("legacy.sqlite3");
@@ -173,6 +242,10 @@ mod tests {
                 connection
                     .prepare("SELECT provider_id, name, added_at FROM mcp_catalog LIMIT 0")?;
                 connection.prepare("SELECT id FROM routines LIMIT 0")?;
+                connection.prepare("SELECT id, round_json FROM agent_groups LIMIT 0")?;
+                connection.prepare("SELECT group_id, agent_id FROM group_members LIMIT 0")?;
+                connection.prepare("SELECT author_agent_id FROM group_messages LIMIT 0")?;
+                connection.prepare("SELECT conversation_id FROM provider_sessions LIMIT 0")?;
                 connection
                     .prepare("SELECT id, source_agent_id FROM conversation_messages LIMIT 0")?;
                 connection.prepare(

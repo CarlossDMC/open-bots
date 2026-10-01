@@ -1,5 +1,6 @@
 import { Cpu, FolderGit2, Settings2 } from "lucide-react";
 import { useState } from "react";
+import { AgentAccessSection } from "./agent-access";
 import { AgentAvatar } from "./agent-avatar";
 import { AgentMcpServersSection } from "./agent-mcp-servers";
 import { AgentMemorySection } from "./agent-memory";
@@ -72,31 +73,12 @@ export function AgentDetails({
           <h2 className="section-title">
             <Settings2 size={14} /> Configuration
           </h2>
-          <div className="grid gap-6 md:grid-cols-2">
-            <div>
-              <p className="label">Instructions</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground-secondary">
-                {agent.instructions || "No persistent instructions."}
-              </p>
-            </div>
-            <div>
-              <p className="label">Permissions</p>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {(Object.entries(agent.permissions) as Array<[string, string]>).map(
-                  ([key, value]) => (
-                    <div
-                      key={key}
-                      className="rounded border border-border-subtle bg-card px-2.5 py-2"
-                    >
-                      <p className="text-xs-plus text-foreground-faint">{titleCase(key)}</p>
-                      <p className="mt-0.5 text-xs text-foreground-secondary">{titleCase(value)}</p>
-                    </div>
-                  )
-                )}
-              </div>
-            </div>
-          </div>
+          <p className="label">Instructions</p>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground-secondary">
+            {agent.instructions || "No persistent instructions."}
+          </p>
         </section>
+        <AgentAccessSection agent={agent} onAgentUpdated={onAgentUpdated} />
         <AgentRoutinesSection agentId={agent.id} />
         <AgentMemorySection agentId={agent.id} />
       </div>

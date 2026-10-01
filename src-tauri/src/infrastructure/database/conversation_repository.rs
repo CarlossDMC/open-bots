@@ -5,7 +5,7 @@ use rusqlite::{params, OptionalExtension, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::conversations::ConversationMessage,
+    domain::conversations::{ConversationMessage, ConversationScope},
     error::{AppError, AppResult},
 };
 
@@ -15,14 +15,22 @@ pub trait ConversationRepository: Send + Sync {
     /// The most recent `limit` messages, oldest first.
     fn list_messages(&self, agent_id: Uuid, limit: usize) -> AppResult<Vec<ConversationMessage>>;
     fn append_message(&self, message: &ConversationMessage) -> AppResult<()>;
-    fn provider_session(&self, agent_id: Uuid, provider_id: &str) -> AppResult<Option<String>>;
+    /// The provider session the agent resumes in `scope`.
+    fn provider_session(
+        &self,
+        agent_id: Uuid,
+        provider_id: &str,
+        scope: ConversationScope,
+    ) -> AppResult<Option<String>>;
     fn save_provider_session(
         &self,
         agent_id: Uuid,
         provider_id: &str,
+        scope: ConversationScope,
         session_id: &str,
     ) -> AppResult<()>;
-    /// Forgets every provider session of the agent; returns how many were removed.
+    /// Forgets every provider session of the agent, in every conversation; returns how many
+    /// were removed.
     fn clear_provider_sessions(&self, agent_id: Uuid) -> AppResult<usize>;
 }
 
@@ -73,12 +81,18 @@ impl ConversationRepository for SqliteConversationRepository {
         })
     }
 
-    fn provider_session(&self, agent_id: Uuid, provider_id: &str) -> AppResult<Option<String>> {
+    fn provider_session(
+        &self,
+        agent_id: Uuid,
+        provider_id: &str,
+        scope: ConversationScope,
+    ) -> AppResult<Option<String>> {
         self.database.with_connection(|connection| {
             Ok(connection
                 .query_row(
-                    "SELECT session_id FROM provider_sessions WHERE agent_id = ?1 AND provider_id = ?2",
-                    params![agent_id.to_string(), provider_id],
+                    "SELECT session_id FROM provider_sessions \
+                     WHERE agent_id = ?1 AND provider_id = ?2 AND conversation_id = ?3",
+                    params![agent_id.to_string(), provider_id, conversation_id(scope)],
                     |row| row.get(0),
                 )
                 .optional()?)
@@ -89,17 +103,19 @@ impl ConversationRepository for SqliteConversationRepository {
         &self,
         agent_id: Uuid,
         provider_id: &str,
+        scope: ConversationScope,
         session_id: &str,
     ) -> AppResult<()> {
         self.database.with_connection(|connection| {
             connection.execute(
-                "INSERT INTO provider_sessions (agent_id, provider_id, session_id, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4) \
-                 ON CONFLICT(agent_id, provider_id) DO UPDATE SET \
+                "INSERT INTO provider_sessions (agent_id, provider_id, conversation_id, session_id, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5) \
+                 ON CONFLICT(agent_id, provider_id, conversation_id) DO UPDATE SET \
                  session_id=excluded.session_id, updated_at=excluded.updated_at",
                 params![
                     agent_id.to_string(),
                     provider_id,
+                    conversation_id(scope),
                     session_id,
                     Utc::now().to_rfc3339()
                 ],
@@ -116,6 +132,14 @@ impl ConversationRepository for SqliteConversationRepository {
             )?)
         })
     }
+}
+
+/// The stored key of a conversation: empty for the direct conversation, else the group id.
+fn conversation_id(scope: ConversationScope) -> String {
+    scope
+        .group_id()
+        .map(|id| id.to_string())
+        .unwrap_or_default()
 }
 
 fn map_message(row: &Row<'_>) -> rusqlite::Result<ConversationMessage> {
@@ -203,38 +227,51 @@ mod tests {
     }
 
     #[test]
-    fn stores_one_provider_session_per_agent_and_provider() {
+    fn stores_one_provider_session_per_agent_provider_and_conversation() {
         let (repository, agent) = setup();
+        let direct = ConversationScope::Direct;
+        let group = ConversationScope::Group(Uuid::new_v4());
         assert_eq!(
             repository
-                .provider_session(agent.id, "codex")
+                .provider_session(agent.id, "codex", direct)
                 .expect("find"),
             None
         );
         repository
-            .save_provider_session(agent.id, "codex", "thread-1")
+            .save_provider_session(agent.id, "codex", direct, "thread-1")
             .expect("save");
         repository
-            .save_provider_session(agent.id, "codex", "thread-2")
+            .save_provider_session(agent.id, "codex", direct, "thread-2")
             .expect("update");
+        repository
+            .save_provider_session(agent.id, "codex", group, "group-thread")
+            .expect("save group");
         assert_eq!(
             repository
-                .provider_session(agent.id, "codex")
+                .provider_session(agent.id, "codex", direct)
                 .expect("find"),
             Some("thread-2".into())
         );
         assert_eq!(
+            repository
+                .provider_session(agent.id, "codex", group)
+                .expect("find group"),
+            Some("group-thread".into())
+        );
+        assert_eq!(
             repository.clear_provider_sessions(agent.id).expect("clear"),
-            1
+            2
         );
         assert_eq!(
             repository
-                .provider_session(agent.id, "codex")
+                .provider_session(agent.id, "codex", direct)
                 .expect("find after clear"),
             None
         );
         assert_eq!(
-            repository.provider_session(agent.id, "mock").expect("find"),
+            repository
+                .provider_session(agent.id, "mock", direct)
+                .expect("find"),
             None
         );
     }

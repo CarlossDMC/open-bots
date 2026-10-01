@@ -40,6 +40,18 @@ pub enum EventType {
     AgentWakeSkipped,
     #[serde(rename = "message.created")]
     MessageCreated,
+    #[serde(rename = "group.created")]
+    GroupCreated,
+    #[serde(rename = "group.deleted")]
+    GroupDeleted,
+    #[serde(rename = "group.message_created")]
+    GroupMessageCreated,
+    /// A member was queued to answer in a group; the runtime starts it when the member is free.
+    #[serde(rename = "group.turn_queued")]
+    GroupTurnQueued,
+    /// Every queued member has answered, or the user stopped the group.
+    #[serde(rename = "group.round_completed")]
+    GroupRoundCompleted,
     #[serde(rename = "task.created")]
     TaskCreated,
     #[serde(rename = "task.assigned")]

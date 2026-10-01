@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use open_bots_lib::{
-    application::{ApprovalService, MemoryService, MessagingService, TaskService, ToolService},
+    application::{
+        ApprovalService, ConversationService, GroupService, MemoryService, MessagingService,
+        TaskService, ToolService,
+    },
     domain::{
         agents::{Agent, IdentityColor, NewAgent},
         approvals::DefaultApprovalPolicy,
@@ -10,11 +13,12 @@ use open_bots_lib::{
     infrastructure::{
         database::{
             AgentRepository, Database, SqliteAgentRepository, SqliteApprovalRepository,
-            SqliteEventRepository, SqliteMemoryRepository, SqliteTaskRepository,
-            SqliteWakeRepository,
+            SqliteConversationRepository, SqliteEventRepository, SqliteGroupRepository,
+            SqliteMemoryRepository, SqliteTaskRepository, SqliteWakeRepository, WakeRepository,
         },
         mcp::McpListener,
     },
+    providers::ProviderRegistry,
     runtime::{
         event_bus::EventBus,
         turn_tokens::{TurnContext, TurnTokens},
@@ -31,6 +35,36 @@ use tokio::{
     net::TcpStream,
 };
 
+/// Groups for tool calls; no provider runs here, so the conversation service has none.
+fn group_service(
+    database: &Arc<Database>,
+    agents: Arc<SqliteAgentRepository>,
+    wakes: Arc<SqliteWakeRepository>,
+    events: Arc<SqliteEventRepository>,
+    event_bus: EventBus,
+) -> Arc<GroupService> {
+    let groups = Arc::new(SqliteGroupRepository::new(Arc::clone(database)));
+    let conversations = Arc::new(
+        ConversationService::new(
+            agents.clone(),
+            Arc::new(SqliteConversationRepository::new(Arc::clone(database))),
+            Arc::new(SqliteMemoryRepository::new(Arc::clone(database))),
+            Arc::new(ProviderRegistry::new()),
+            events.clone(),
+            event_bus.clone(),
+        )
+        .with_groups(groups.clone()),
+    );
+    Arc::new(GroupService::new(
+        groups,
+        agents,
+        wakes,
+        conversations,
+        events,
+        event_bus,
+    ))
+}
+
 struct TestHarness {
     _directory: TempDir,
     url: String,
@@ -41,6 +75,7 @@ struct TestHarness {
     tasks: Arc<TaskService>,
     approvals: Arc<ApprovalService>,
     wakes: Arc<SqliteWakeRepository>,
+    groups: Arc<GroupService>,
 }
 
 fn agent(agents: &SqliteAgentRepository, name: &str) -> Agent {
@@ -82,6 +117,13 @@ impl TestHarness {
             event_bus.clone(),
         ));
         let wakes = Arc::new(SqliteWakeRepository::new(Arc::clone(&database)));
+        let groups = group_service(
+            &database,
+            agents.clone(),
+            wakes.clone(),
+            events.clone(),
+            event_bus.clone(),
+        );
         let approvals = Arc::new(ApprovalService::new(
             Arc::new(SqliteApprovalRepository::new(database)),
             agents.clone(),
@@ -103,6 +145,7 @@ impl TestHarness {
                 tasks: Arc::clone(&tasks),
                 messaging,
                 approvals: Arc::clone(&approvals),
+                groups: Arc::clone(&groups),
             },
         )
         .expect("register tools");
@@ -121,13 +164,19 @@ impl TestHarness {
             tasks,
             approvals,
             wakes,
+            groups,
         }
     }
 
     fn token_for(&self, agent: &Agent) -> String {
+        self.token_in(agent, None)
+    }
+
+    fn token_in(&self, agent: &Agent, group_id: Option<uuid::Uuid>) -> String {
         self.tokens.issue(TurnContext {
             agent_id: agent.id,
             chain_depth: 0,
+            group_id,
         })
     }
 
@@ -226,6 +275,9 @@ async fn initializes_and_lists_the_runtime_tools() {
             "agent_list",
             "agent_message",
             "approval_request",
+            "group_create",
+            "group_list",
+            "group_post",
             "memory_save",
             "task_create",
             "task_list",
@@ -368,4 +420,68 @@ async fn messages_and_approval_requests_act_for_the_caller() {
     let approvals = harness.approvals.list().expect("approvals");
     assert_eq!(approvals[0].agent_id, harness.atlas.id);
     assert_eq!(approvals[0].status, ApprovalStatus::Pending);
+}
+
+#[tokio::test]
+async fn agents_create_groups_they_join_and_post_in_them() {
+    let harness = TestHarness::new();
+    let atlas_token = harness.token_for(&harness.atlas);
+
+    let created = harness
+        .call(
+            &atlas_token,
+            "group_create",
+            json!({ "name": "API review", "topic": "Review the v2 API", "members": ["Nova"],
+                "message": "Please review the draft." }),
+        )
+        .await;
+    assert_eq!(created["isError"], false, "{created}");
+    let groups = harness.groups.list().expect("groups");
+    assert_eq!(groups.len(), 1);
+    let group = &groups[0];
+    assert_eq!(group.member_ids, vec![harness.atlas.id, harness.nova.id]);
+    // The opening message wakes the other member, one chained turn deeper.
+    let wake = harness
+        .wakes
+        .next_pending(harness.nova.id)
+        .expect("pending")
+        .expect("wake");
+    assert_eq!(wake.chain_depth, 1);
+    assert_eq!(group.round.active_wake_id, Some(wake.id));
+    assert!(harness
+        .wakes
+        .next_pending(harness.atlas.id)
+        .expect("pending")
+        .is_none());
+
+    let listed = harness
+        .call(&harness.token_for(&harness.nova), "group_list", json!({}))
+        .await;
+    assert_eq!(listed["isError"], false, "{listed}");
+    assert_eq!(
+        listed["structuredContent"]["groups"][0]["name"], "API review",
+        "{listed}"
+    );
+
+    let inside = harness
+        .call(
+            &harness.token_in(&harness.atlas, Some(group.id)),
+            "group_post",
+            json!({ "group": "API review", "message": "Hello again" }),
+        )
+        .await;
+    assert_eq!(inside["isError"], true, "{inside}");
+
+    let posted = harness
+        .call(
+            &atlas_token,
+            "group_post",
+            json!({ "group": "api review", "message": "One more thing." }),
+        )
+        .await;
+    assert_eq!(posted["isError"], false, "{posted}");
+    assert_eq!(
+        harness.groups.messages(group.id).expect("messages").len(),
+        2
+    );
 }

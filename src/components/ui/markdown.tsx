@@ -1,6 +1,7 @@
-import type { ElementType, HTMLAttributes } from "react";
+import { useMemo, type AnchorHTMLAttributes, type ElementType, type HTMLAttributes } from "react";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { linkMentions, mentionIdFromHref, type MentionCandidate } from "@/lib/mentions";
 import { cn } from "@/lib/utils";
 
 // Builds a markdown element renderer with compact chat styling. The hast `node`
@@ -50,12 +51,82 @@ const components: Components = {
   td: styled("td", "border border-border px-2 py-1")
 };
 
-export function Markdown({ content, className }: { content: string; className?: string }) {
+const ExternalLink = components.a as ElementType;
+
+/**
+ * Renders chat markdown. With `mentions`, each `@Name` becomes a link that calls
+ * `onMention` with the mentioned id.
+ */
+export function Markdown({
+  content,
+  className,
+  mentions,
+  onMention
+}: {
+  content: string;
+  className?: string;
+  mentions?: MentionCandidate[];
+  onMention?: (id: string) => void;
+}) {
+  const source = useMemo(
+    () => (mentions?.length ? linkMentions(content, mentions) : content),
+    [content, mentions]
+  );
+  const renderers = useMemo<Components>(() => {
+    if (!mentions?.length) return components;
+    return {
+      ...components,
+      a: function MarkdownLink({
+        node,
+        href,
+        children,
+        ...props
+      }: AnchorHTMLAttributes<HTMLAnchorElement> & ExtraProps) {
+        const id = mentionIdFromHref(href);
+        if (id === undefined)
+          return (
+            <ExternalLink node={node} href={href} {...props}>
+              {children}
+            </ExternalLink>
+          );
+        return (
+          <MentionLink
+            label={typeof children === "string" ? children : undefined}
+            onClick={() => onMention?.(id)}
+          >
+            {children}
+          </MentionLink>
+        );
+      }
+    };
+  }, [mentions, onMention]);
   return (
     <div className={cn("min-w-0 break-words", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {content}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={renderers}>
+        {source}
       </ReactMarkdown>
     </div>
+  );
+}
+
+/** An `@Name` mention that opens the mentioned agent. */
+export function MentionLink({
+  label,
+  onClick,
+  children
+}: {
+  label?: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label ? `Open ${label.replace(/^@/, "")}` : undefined}
+      className="rounded-sm bg-accent px-0.5 font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </button>
   );
 }

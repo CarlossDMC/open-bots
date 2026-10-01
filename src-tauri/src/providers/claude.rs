@@ -11,8 +11,10 @@
 //!   enough because Claude Code auto-approves read-only shell commands. `dontAsk` with
 //!   `--permission-prompts none` denies anything that would otherwise prompt, so a turn never
 //!   waits for input. Read-only agents get `Read,Glob,Grep`; workspace-write agents also get
-//!   `Edit,Write,Bash`. Claude Code's Bash tool is not sandboxed by the operating system, so
-//!   workspace-write commands can reach files outside the workspace.
+//!   `Edit,Write,Bash`, and agents with internet access also get `WebFetch,WebSearch`
+//!   (checked against `2.1.287`). Claude Code's Bash tool is not sandboxed by the operating
+//!   system, so workspace-write commands can reach files outside the workspace and the
+//!   network.
 //! - Events are JSONL: `system`/`init` carries the session id, `assistant` messages carry
 //!   `text` and `tool_use` blocks, `user` messages carry `tool_result` blocks, and `result`
 //!   ends the turn (`is_error` reports failures). Errors raised before a model call arrive as
@@ -83,6 +85,8 @@ use crate::{
 const PROGRAM: &str = "claude";
 const READ_ONLY_TOOLS: &str = "Read,Glob,Grep";
 const WORKSPACE_WRITE_TOOLS: &str = "Read,Glob,Grep,Edit,Write,Bash";
+/// Claude Code's built-in web tools, added when the agent has internet access.
+const NETWORK_TOOLS: &str = "WebFetch,WebSearch";
 /// How long the first turn waits for configured MCP servers that are still connecting.
 const MCP_STARTUP_WAIT_ENV: &str = "CLAUDE_CODE_MCP_STARTUP_WAIT_MS";
 const MCP_STARTUP_WAIT_MS: &str = "15000";
@@ -400,10 +404,15 @@ fn model_catalog() -> Vec<ProviderModel> {
     ]
 }
 
-fn allowed_tools(access: WorkspaceAccess) -> &'static str {
-    match access {
+fn allowed_tools(access: WorkspaceAccess, network: bool) -> String {
+    let base = match access {
         WorkspaceAccess::ReadOnly => READ_ONLY_TOOLS,
         WorkspaceAccess::WorkspaceWrite => WORKSPACE_WRITE_TOOLS,
+    };
+    if network {
+        format!("{base},{NETWORK_TOOLS}")
+    } else {
+        base.to_owned()
     }
 }
 
@@ -479,8 +488,8 @@ fn mcp_tool_prefix(server: &str) -> String {
 }
 
 fn turn_command(request: &TurnRequest) -> LineCommand {
-    let tools = allowed_tools(request.access);
-    let mut allowed = vec![tools.to_owned()];
+    let tools = allowed_tools(request.access, request.network);
+    let mut allowed = vec![tools.clone()];
     // A server name in `--allowed-tools` pre-approves every tool that server provides.
     let runtime_prefix = format!("mcp__{RUNTIME_TOOLS_SERVER_NAME}");
     if request.runtime_tools.is_some() {
@@ -504,7 +513,7 @@ fn turn_command(request: &TurnRequest) -> LineCommand {
         "--permission-prompts",
         "none",
         "--tools",
-        tools,
+        &tools,
         "--allowed-tools",
         &allowed,
     ]
@@ -798,6 +807,32 @@ mod tests {
     }
 
     #[test]
+    fn adds_web_tools_only_with_internet_access() {
+        let tools = |network: bool| {
+            let mut request = request(None, WorkspaceAccess::WorkspaceWrite);
+            request.network = network;
+            let command = turn_command(&request);
+            let at = |flag: &str| {
+                let index = command
+                    .arguments
+                    .iter()
+                    .position(|argument| argument == flag)
+                    .expect("flag");
+                command.arguments[index + 1].clone()
+            };
+            (at("--tools"), at("--allowed-tools"))
+        };
+        assert_eq!(
+            tools(true),
+            (
+                "Read,Glob,Grep,Edit,Write,Bash,WebFetch,WebSearch".into(),
+                "Read,Glob,Grep,Edit,Write,Bash,WebFetch,WebSearch".into()
+            )
+        );
+        assert!(!tools(false).0.contains("Web"));
+    }
+
+    #[test]
     fn omits_runtime_tools_when_not_offered() {
         let command = turn_command(&request(None, WorkspaceAccess::ReadOnly));
         assert!(!command.arguments.contains(&"--mcp-config".to_owned()));
@@ -810,6 +845,7 @@ mod tests {
             prompt: "List the files".into(),
             workspace: "/work/project".into(),
             access,
+            network: false,
             model: None,
             reasoning_effort: None,
             runtime_tools: None,

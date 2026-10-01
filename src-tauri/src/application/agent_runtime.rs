@@ -4,7 +4,7 @@ use serde_json::json;
 use tokio::sync::broadcast::{error::RecvError, Receiver};
 use uuid::Uuid;
 
-use super::{routine_service::now, ConversationService, SettingsService};
+use super::{routine_service::now, ConversationService, GroupService, SettingsService};
 use crate::{
     domain::{
         agents::AgentStatus,
@@ -32,6 +32,7 @@ pub struct AgentRuntime {
     approvals: Arc<dyn ApprovalRepository>,
     settings: Arc<SettingsService>,
     conversations: Arc<ConversationService>,
+    groups: Option<Arc<GroupService>>,
     events: Arc<dyn EventRepository>,
     event_bus: EventBus,
 }
@@ -57,9 +58,16 @@ impl AgentRuntime {
             approvals,
             settings,
             conversations,
+            groups: None,
             events,
             event_bus,
         }
+    }
+
+    /// Moves group rounds on as members finish their group turns.
+    pub fn with_groups(mut self, groups: Arc<GroupService>) -> Self {
+        self.groups = Some(groups);
+        self
     }
 
     /// Queues a wake for the event, if it wakes anyone, and runs whatever an affected
@@ -73,12 +81,14 @@ impl AgentRuntime {
         match event.event_type {
             EventType::AgentCompleted | EventType::AgentFailed | EventType::AgentCancelled => {
                 if let Some(agent_id) = event.aggregate_id {
+                    self.finish_group_turn(agent_id, event)?;
                     self.wait_for_pending_approvals(agent_id)?;
                     self.drain(agent_id)?;
                 }
             }
-            // Messaging queues the wake itself; the event says there is one to run.
-            EventType::AgentMessage => {
+            // Messaging and groups queue the wake themselves; the event says there is one
+            // to run.
+            EventType::AgentMessage | EventType::GroupTurnQueued => {
                 if let Some(agent_id) = event.aggregate_id {
                     self.drain(agent_id)?;
                 }
@@ -86,6 +96,27 @@ impl AgentRuntime {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Hands a finished group turn back to its group, which queues the next speaker.
+    fn finish_group_turn(&self, agent_id: Uuid, event: &DomainEvent) -> AppResult<()> {
+        let Some(groups) = &self.groups else {
+            return Ok(());
+        };
+        let Some(group_id) = payload_uuid(&event.payload, "groupId") else {
+            return Ok(());
+        };
+        let mentioned: Vec<Uuid> = event
+            .payload
+            .get("mentionedAgentIds")
+            .and_then(|value| value.as_array())
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| id.as_str()?.parse().ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        groups.on_turn_finished(agent_id, group_id, &mentioned)
     }
 
     /// Shows an agent that ended its turn with a pending approval as waiting until the
@@ -134,6 +165,13 @@ impl AgentRuntime {
         }
         let max_chain_turns = self.settings.runtime()?.max_chain_turns;
         while let Some(mut wake) = self.wakes.next_pending(agent_id)? {
+            if let Some(group_id) = wake_group(&wake) {
+                if !self.group_wake_is_current(&wake, group_id)? {
+                    wake.consume(WakeOutcome::Discarded, now())?;
+                    self.wakes.save_outcome(&wake)?;
+                    continue;
+                }
+            }
             if wake.exceeds(max_chain_turns) {
                 self.skip(&mut wake, max_chain_turns)?;
                 continue;
@@ -150,27 +188,59 @@ impl AgentRuntime {
                     tracing::warn!(agent_id = %agent_id, %error, "agent wake could not start");
                     wake.consume(WakeOutcome::Discarded, now())?;
                     self.wakes.save_outcome(&wake)?;
-                    self.conversations.append_notice(
-                        agent_id,
-                        &format!("{} The turn could not start: {error}", wake.origin.notice()),
-                    )?;
+                    match (wake_group(&wake), &self.groups) {
+                        (Some(group_id), Some(groups)) => groups.skip_turn(
+                            &wake,
+                            group_id,
+                            &format!("{}'s turn could not start: {error}", agent.name),
+                        )?,
+                        _ => self.conversations.append_notice(
+                            agent_id,
+                            &format!("{} The turn could not start: {error}", wake.origin.notice()),
+                        )?,
+                    }
                 }
             }
         }
         Ok(())
     }
 
+    /// Whether a group wake still belongs to its group's round. Without groups, no group
+    /// wake can run.
+    fn group_wake_is_current(&self, wake: &Wake, group_id: Uuid) -> AppResult<bool> {
+        match &self.groups {
+            Some(groups) => groups.is_current_wake(group_id, wake.id),
+            None => Ok(false),
+        }
+    }
+
     fn skip(&self, wake: &mut Wake, max_chain_turns: u32) -> AppResult<()> {
         wake.consume(WakeOutcome::SkippedChainLimit, now())?;
         self.wakes.save_outcome(wake)?;
-        self.conversations.append_notice(
-            wake.agent_id,
-            &format!(
-                "{} Not started: {max_chain_turns} turns already ran without a user message. \
-                 Send a message to continue.",
-                wake.origin.notice()
-            ),
-        )?;
+        match (wake_group(wake), &self.groups) {
+            (Some(group_id), Some(groups)) => {
+                let name = self
+                    .agents
+                    .find(wake.agent_id)?
+                    .map_or_else(|| "A member".to_owned(), |agent| agent.name);
+                groups.skip_turn(
+                    wake,
+                    group_id,
+                    &format!(
+                        "{name} did not answer: {max_chain_turns} turns already ran without a \
+                         user message. Send a message to continue."
+                    ),
+                )?;
+            }
+            _ => self.conversations.append_notice(
+                wake.agent_id,
+                &format!(
+                    "{} Not started: {max_chain_turns} turns already ran without a user message. \
+                     Send a message to continue.",
+                    wake.origin.notice()
+                ),
+            )?,
+        }
         let event = DomainEvent::new(
             EventType::AgentWakeSkipped,
             Some(wake.agent_id),
@@ -295,6 +365,17 @@ impl AgentRuntime {
             .transpose()
             .map(Option::flatten)
     }
+}
+
+fn wake_group(wake: &Wake) -> Option<Uuid> {
+    match &wake.origin {
+        WakeOrigin::GroupTurn { group_id, .. } => Some(*group_id),
+        _ => None,
+    }
+}
+
+fn payload_uuid(payload: &serde_json::Value, key: &str) -> Option<Uuid> {
+    payload.get(key)?.as_str()?.parse().ok()
 }
 
 fn status_word(task: &Task) -> String {

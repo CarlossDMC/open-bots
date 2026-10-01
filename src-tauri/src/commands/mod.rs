@@ -8,6 +8,7 @@ use crate::{
         approvals::{ApprovalRequest, ApprovalStatus},
         conversations::ConversationMessage,
         events::DomainEvent,
+        groups::{Group, GroupMessage, NewGroup},
         mcp_servers::McpCatalogEntry,
         memories::AgentMemory,
         routines::{NewRoutine, Routine},
@@ -42,6 +43,18 @@ pub fn update_agent_model(
     state: State<'_, AppState>,
 ) -> AppResult<Agent> {
     state.agents.update_model(agent_id, model, reasoning_effort)
+}
+
+#[tauri::command]
+pub fn update_agent_access(
+    agent_id: Uuid,
+    workspace_write: bool,
+    network: bool,
+    state: State<'_, AppState>,
+) -> AppResult<Agent> {
+    state
+        .agents
+        .update_access(agent_id, workspace_write, network)
 }
 
 #[tauri::command]
@@ -225,4 +238,41 @@ pub fn reset_agent_session(agent_id: Uuid, state: State<'_, AppState>) -> AppRes
 #[tauri::command]
 pub fn cancel_turn(agent_id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
     state.conversations.cancel(agent_id)
+}
+
+#[tauri::command]
+pub fn list_groups(state: State<'_, AppState>) -> AppResult<Vec<Group>> {
+    state.groups.list()
+}
+
+#[tauri::command]
+pub fn create_group(input: NewGroup, state: State<'_, AppState>) -> AppResult<Group> {
+    state.groups.create(input)
+}
+
+#[tauri::command]
+pub fn delete_group(group_id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
+    state.groups.delete(group_id)
+}
+
+#[tauri::command]
+pub fn list_group_messages(
+    group_id: Uuid,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<GroupMessage>> {
+    state.groups.messages(group_id)
+}
+
+#[tauri::command]
+pub fn send_group_message(
+    group_id: Uuid,
+    content: String,
+    state: State<'_, AppState>,
+) -> AppResult<GroupMessage> {
+    state.groups.post_user_message(group_id, &content)
+}
+
+#[tauri::command]
+pub fn stop_group(group_id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
+    state.groups.stop(group_id)
 }

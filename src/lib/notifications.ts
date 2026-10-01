@@ -34,7 +34,11 @@ export function notificationFor(event: RuntimeEvent, agents: Agent[]): DesktopNo
         body: `${agentName} wants to run: ${text("action")}`.trim()
       };
     case "agent.completed":
+      // A group notifies once, when every member has answered.
+      if (event.payload.groupId) return null;
       return { title: agentName, body: "Finished a turn" };
+    case "group.round_completed":
+      return { title: text("name") || "Group", body: "Everyone has answered" };
     case "agent.failed":
       return { title: agentName, body: text("detail") || "The turn failed" };
     case "agent.wake_skipped":

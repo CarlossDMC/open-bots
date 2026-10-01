@@ -11,16 +11,16 @@ use std::sync::Arc;
 
 use application::{
     run_agent_runtime, run_routine_scheduler, ActivityService, AgentRuntime, AgentService,
-    ApprovalService, ConversationService, McpCatalogService, MemoryService, MessagingService,
-    ProviderService, RoutineService, SettingsService, TaskService, ToolService,
+    ApprovalService, ConversationService, GroupService, McpCatalogService, MemoryService,
+    MessagingService, ProviderService, RoutineService, SettingsService, TaskService, ToolService,
 };
 use domain::approvals::DefaultApprovalPolicy;
 use infrastructure::{
     database::{
         Database, SqliteAgentRepository, SqliteApprovalRepository, SqliteConversationRepository,
-        SqliteEventRepository, SqliteMcpCatalogRepository, SqliteMemoryRepository,
-        SqliteRoutineRepository, SqliteSettingsRepository, SqliteTaskRepository,
-        SqliteWakeRepository,
+        SqliteEventRepository, SqliteGroupRepository, SqliteMcpCatalogRepository,
+        SqliteMemoryRepository, SqliteRoutineRepository, SqliteSettingsRepository,
+        SqliteTaskRepository, SqliteWakeRepository,
     },
     mcp::McpListener,
     process::{TokioJsonRpcProcessClient, TokioLineProcessRunner},
@@ -43,6 +43,7 @@ pub struct AppState {
     tasks: Arc<TaskService>,
     settings: Arc<SettingsService>,
     conversations: Arc<ConversationService>,
+    groups: Arc<GroupService>,
     providers: Arc<ProviderRegistry>,
     provider_catalog: ProviderService,
     mcp_catalog: McpCatalogService,
@@ -76,6 +77,7 @@ pub fn run() {
             )));
             let conversation_repository =
                 Arc::new(SqliteConversationRepository::new(Arc::clone(&database)));
+            let group_repository = Arc::new(SqliteGroupRepository::new(Arc::clone(&database)));
             let event_repository = Arc::new(SqliteEventRepository::new(database));
             let mut registry = ProviderRegistry::new();
             registry.register(Arc::new(MockProvider))?;
@@ -114,10 +116,22 @@ pub fn run() {
                     event_bus.clone(),
                 )
                 .with_runtime_tools(mcp_listener.url(), Arc::clone(&turn_tokens))
-                .with_mcp_catalog(mcp_catalog_repository.clone()),
+                .with_mcp_catalog(mcp_catalog_repository.clone())
+                .with_groups(group_repository.clone()),
             );
             if let Err(error) = conversations.recover_interrupted() {
                 tracing::error!(%error, "interrupted turns could not be recovered");
+            }
+            let groups = Arc::new(GroupService::new(
+                group_repository,
+                agent_repository.clone(),
+                wake_repository.clone(),
+                Arc::clone(&conversations),
+                event_repository.clone(),
+                event_bus.clone(),
+            ));
+            if let Err(error) = groups.resume_interrupted() {
+                tracing::error!(%error, "interrupted group rounds could not be resumed");
             }
             let memories = Arc::new(MemoryService::new(
                 memory_repository,
@@ -151,6 +165,7 @@ pub fn run() {
                         event_bus.clone(),
                     )),
                     approvals: Arc::clone(&approvals),
+                    groups: Arc::clone(&groups),
                 },
             )?;
             let tool_service = Arc::new(ToolService::new(
@@ -158,17 +173,20 @@ pub fn run() {
                 Arc::new(DefaultApprovalPolicy),
             ));
             tauri::async_runtime::spawn(mcp_listener.serve(tool_service, turn_tokens));
-            let agent_runtime = Arc::new(AgentRuntime::new(
-                wake_repository,
-                agent_repository,
-                routine_repository,
-                task_repository,
-                approval_repository,
-                Arc::clone(&settings),
-                Arc::clone(&conversations),
-                event_repository.clone(),
-                event_bus.clone(),
-            ));
+            let agent_runtime = Arc::new(
+                AgentRuntime::new(
+                    wake_repository,
+                    agent_repository,
+                    routine_repository,
+                    task_repository,
+                    approval_repository,
+                    Arc::clone(&settings),
+                    Arc::clone(&conversations),
+                    event_repository.clone(),
+                    event_bus.clone(),
+                )
+                .with_groups(Arc::clone(&groups)),
+            );
             tauri::async_runtime::spawn(run_agent_runtime(agent_runtime, event_bus.subscribe()));
             tauri::async_runtime::spawn(run_routine_scheduler(Arc::clone(&routines)));
             let mcp_catalog = McpCatalogService::new(
@@ -188,6 +206,7 @@ pub fn run() {
                 tasks,
                 settings,
                 conversations,
+                groups,
                 providers,
                 provider_catalog,
                 mcp_catalog,
@@ -203,6 +222,7 @@ pub fn run() {
             commands::read_provider_usage,
             commands::update_agent_model,
             commands::update_agent_mcp_servers,
+            commands::update_agent_access,
             commands::list_mcp_catalog,
             commands::discover_mcp_servers,
             commands::save_mcp_catalog,
@@ -225,7 +245,13 @@ pub fn run() {
             commands::list_messages,
             commands::send_message,
             commands::cancel_turn,
-            commands::reset_agent_session
+            commands::reset_agent_session,
+            commands::list_groups,
+            commands::create_group,
+            commands::delete_group,
+            commands::list_group_messages,
+            commands::send_group_message,
+            commands::stop_group
         ])
         .run(tauri::generate_context!())
         .expect("Tauri application failed to start");

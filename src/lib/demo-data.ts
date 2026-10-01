@@ -11,7 +11,7 @@ const defaultPermissions = {
   filesystem: "workspace-only",
   shell: "allowed",
   git: "approval-required",
-  network: "restricted",
+  network: "allowed",
   browser: "denied"
 } as const;
 

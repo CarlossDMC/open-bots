@@ -17,9 +17,12 @@ import type {
   ConfiguredMcpServer,
   ConversationMessage,
   ApprovalDecision,
+  Group,
+  GroupMessage,
   ApprovalRequest,
   McpCatalogEntry,
   NewAgentInput,
+  NewGroupInput,
   NewRoutineInput,
   NewTaskInput,
   ProviderModel,
@@ -57,9 +60,9 @@ export async function createAgent(input: NewAgentInput, mcpServers: string[] = [
       mcpServers,
       permissions: {
         filesystem: "workspace-only",
-        shell: "approval-required",
+        shell: "allowed",
         git: "approval-required",
-        network: "restricted",
+        network: "allowed",
         browser: "denied"
       },
       createdAt: timestamp,
@@ -99,6 +102,27 @@ export async function updateAgentModel(
 }
 
 /** Replaces the agent's configured MCP servers. Applies from the agent's next turn. */
+/** Turns workspace writes and internet access on or off from the agent's next turn. */
+export async function updateAgentAccess(
+  agent: Agent,
+  workspaceWrite: boolean,
+  network: boolean
+): Promise<Agent> {
+  if (!isTauriRuntime()) {
+    return {
+      ...agent,
+      permissions: {
+        ...agent.permissions,
+        filesystem: "workspace-only",
+        shell: workspaceWrite ? "allowed" : "approval-required",
+        network: network ? "allowed" : "restricted"
+      },
+      updatedAt: new Date().toISOString()
+    };
+  }
+  return invoke<Agent>("update_agent_access", { agentId: agent.id, workspaceWrite, network });
+}
+
 export async function updateAgentMcpServers(agent: Agent, servers: string[]): Promise<Agent> {
   if (!isTauriRuntime()) {
     return { ...agent, mcpServers: servers, updatedAt: new Date().toISOString() };
@@ -269,6 +293,41 @@ export async function cancelTurn(agentId: string): Promise<void> {
 export async function resetAgentSession(agentId: string): Promise<void> {
   if (!isTauriRuntime()) throw new Error(messagingUnavailableMessage);
   await invoke("reset_agent_session", { agentId });
+}
+
+/** Groups run in the desktop runtime; the browser preview has none. */
+export const groupsUnavailableMessage = "Groups require the desktop runtime.";
+
+export async function listGroups(): Promise<Group[]> {
+  if (!isTauriRuntime()) return [];
+  return invoke<Group[]>("list_groups");
+}
+
+export async function createGroup(input: NewGroupInput): Promise<Group> {
+  if (!isTauriRuntime()) throw new Error(groupsUnavailableMessage);
+  return invoke<Group>("create_group", { input });
+}
+
+export async function deleteGroup(groupId: string): Promise<void> {
+  if (!isTauriRuntime()) throw new Error(groupsUnavailableMessage);
+  await invoke("delete_group", { groupId });
+}
+
+export async function listGroupMessages(groupId: string): Promise<GroupMessage[]> {
+  if (!isTauriRuntime()) return [];
+  return invoke<GroupMessage[]>("list_group_messages", { groupId });
+}
+
+/** Records the message and queues the members who answer. Replies arrive as runtime events. */
+export async function sendGroupMessage(groupId: string, content: string): Promise<GroupMessage> {
+  if (!isTauriRuntime()) throw new Error(groupsUnavailableMessage);
+  return invoke<GroupMessage>("send_group_message", { groupId, content });
+}
+
+/** Ends the group's round: the member answering now is stopped and nobody else answers. */
+export async function stopGroup(groupId: string): Promise<void> {
+  if (!isTauriRuntime()) throw new Error(groupsUnavailableMessage);
+  await invoke("stop_group", { groupId });
 }
 
 /** Aligns the native title bar with the app theme. `null` lets it follow the operating system. */

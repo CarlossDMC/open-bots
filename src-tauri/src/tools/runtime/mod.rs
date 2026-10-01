@@ -1,9 +1,10 @@
 //! Tools that let an agent act on the Open Bots runtime: tasks, memories, messages to other
-//! agents, and approval requests.
+//! agents, groups, and approval requests.
 //! They are served to providers over the local MCP server and act for the calling agent.
 
 mod agents;
 mod collaboration;
+mod groups;
 mod memory;
 mod tasks;
 
@@ -12,7 +13,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
-    application::{ApprovalService, MemoryService, MessagingService, TaskService},
+    application::{ApprovalService, GroupService, MemoryService, MessagingService, TaskService},
     domain::agents::Agent,
     error::{AppError, AppResult},
     infrastructure::database::AgentRepository,
@@ -20,6 +21,7 @@ use crate::{
 
 pub use agents::AgentListTool;
 pub use collaboration::{AgentMessageTool, ApprovalRequestTool};
+pub use groups::{GroupCreateTool, GroupListTool, GroupPostTool};
 pub use memory::MemorySaveTool;
 pub use tasks::{TaskCreateTool, TaskListTool, TaskUpdateTool};
 
@@ -33,6 +35,7 @@ pub struct RuntimeToolServices {
     pub tasks: Arc<TaskService>,
     pub messaging: Arc<MessagingService>,
     pub approvals: Arc<ApprovalService>,
+    pub groups: Arc<GroupService>,
 }
 
 /// Registers every runtime tool.
@@ -51,6 +54,9 @@ pub fn register_runtime_tools(
             services.messaging.clone(),
         )),
         Arc::new(ApprovalRequestTool::new(services.approvals.clone())),
+        Arc::new(GroupCreateTool::new(services.clone())),
+        Arc::new(GroupListTool::new(services.groups.clone())),
+        Arc::new(GroupPostTool::new(services.groups.clone())),
     ];
     for tool in tools {
         registry.register(tool)?;

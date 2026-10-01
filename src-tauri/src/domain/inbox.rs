@@ -31,6 +31,8 @@ pub enum WakeOrigin {
     },
     #[serde(rename_all = "camelCase")]
     ApprovalResolved { approval_id: Uuid, approved: bool },
+    #[serde(rename_all = "camelCase")]
+    GroupTurn { group_id: Uuid, group_name: String },
 }
 
 impl WakeOrigin {
@@ -55,6 +57,9 @@ impl WakeOrigin {
             } => format!(
                 "Your approval request {approval_id} was {}.",
                 if *approved { "approved" } else { "denied" }
+            ),
+            Self::GroupTurn { group_name, .. } => format!(
+                "Your turn in group \"{group_name}\". Your reply is posted to the group."
             ),
         }
     }

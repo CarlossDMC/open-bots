@@ -232,3 +232,45 @@ export interface RuntimeSettings {
   /** Turns that may chain from one user message or routine before the user steps in. */
   maxChainTurns: number;
 }
+
+/** Who wrote a group message or created a group. */
+export type GroupAuthor =
+  { kind: "user" } | { kind: "agent"; agentId: string } | { kind: "system" };
+
+export interface RoundSpeaker {
+  agentId: string;
+  chainDepth: number;
+}
+
+/** Members still to answer, in speaking order; empty when the group is idle. */
+export interface GroupRound {
+  queue: RoundSpeaker[];
+  activeWakeId?: string | null;
+}
+
+/** A conversation between the user and several agents about one topic. */
+export interface Group {
+  id: string;
+  name: string;
+  topic: string;
+  /** Members in speaking order. */
+  memberIds: string[];
+  createdBy: GroupAuthor;
+  round: GroupRound;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewGroupInput {
+  name: string;
+  topic: string;
+  memberIds: string[];
+}
+
+export interface GroupMessage {
+  id: string;
+  groupId: string;
+  author: GroupAuthor;
+  content: string;
+  createdAt: string;
+}

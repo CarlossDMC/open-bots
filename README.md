@@ -127,30 +127,31 @@ Read the [architecture guide](docs/architecture.md) and [architecture decisions]
 
 ## What works today
 
-| Area                                    | Status                           |
-| --------------------------------------- | -------------------------------- |
-| Tauri 2 desktop shell                   | Functional                       |
-| React desktop interface                 | Functional                       |
-| Local SQLite initialization             | Functional                       |
-| Create and list agents                  | Functional and persisted         |
-| Agent validation and status transitions | Functional and tested            |
-| Persisted `agent.created` events        | Functional                       |
-| Activity timeline from persisted events | Functional; live via event bus   |
-| Approvals requested by agents           | Functional; agent waits, resumes |
-| Per-agent memory (user and learned)     | Sent on a session's first turn   |
-| Scheduled routines (interval, daily)    | Run as agent turns while open    |
-| Desktop notifications                   | Replies, approvals, routines     |
-| In-process event bus                    | Functional and tested            |
-| Provider registry                       | Functional                       |
-| Mock provider                           | Functional; makes no model calls |
-| Tasks (create, delegate, track)         | Functional and persisted         |
-| OpenAI Codex CLI conversations          | Functional; resumes sessions     |
-| Claude Code CLI conversations           | Functional; resumes sessions     |
-| Workspace writes by agents              | Read-only until permissions UI   |
-| Event-driven wake loop                  | Functional; chained-turn limit   |
-| Agent collaboration and delegation      | Tasks and messages via MCP tools |
-| Background process execution            | Boundary only                    |
-| Git, PTY, and artifact storage          | Boundary only                    |
+| Area                                    | Status                            |
+| --------------------------------------- | --------------------------------- |
+| Tauri 2 desktop shell                   | Functional                        |
+| React desktop interface                 | Functional                        |
+| Local SQLite initialization             | Functional                        |
+| Create and list agents                  | Functional and persisted          |
+| Agent validation and status transitions | Functional and tested             |
+| Persisted `agent.created` events        | Functional                        |
+| Activity timeline from persisted events | Functional; live via event bus    |
+| Approvals requested by agents           | Functional; agent waits, resumes  |
+| Per-agent memory (user and learned)     | Sent on a session's first turn    |
+| Scheduled routines (interval, daily)    | Run as agent turns while open     |
+| Desktop notifications                   | Replies, approvals, routines      |
+| In-process event bus                    | Functional and tested             |
+| Provider registry                       | Functional                        |
+| Mock provider                           | Functional; makes no model calls  |
+| Tasks (create, delegate, track)         | Functional and persisted          |
+| OpenAI Codex CLI conversations          | Functional; resumes sessions      |
+| Claude Code CLI conversations           | Functional; resumes sessions      |
+| Workspace writes and internet access    | On by default; toggled per agent  |
+| Event-driven wake loop                  | Functional; chained-turn limit    |
+| Agent collaboration and delegation      | Tasks and messages via MCP tools  |
+| Agent groups                            | Members answer in turn; @mentions |
+| Background process execution            | Boundary only                     |
+| Git, PTY, and artifact storage          | Boundary only                     |
 
 The browser preview deliberately uses labeled demonstration data because SQLite and Tauri commands are available only in the desktop runtime.
 
@@ -301,6 +302,7 @@ Losing the private key means existing installations can no longer verify new upd
 - [x] Persisted approvals and decisions
 - [ ] Tool permissions connected to approval requests
 - [ ] Agent-to-agent messages and task delegation
+- [x] Agent groups for topic conversations
 - [ ] Local artifact storage and exchange
 
 ### Expansion — later

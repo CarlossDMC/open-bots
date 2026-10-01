@@ -8,7 +8,7 @@ use open_bots_lib::{
     application::{ConversationService, MemoryService},
     domain::{
         agents::{Agent, AgentStatus, IdentityColor, ModelSelection, NewAgent, WorkspaceAccess},
-        conversations::MessageRole,
+        conversations::{ConversationScope, MessageRole},
         events::{DomainEvent, EventType},
     },
     error::{AppError, AppResult},
@@ -229,7 +229,7 @@ async fn runs_a_turn_and_resumes_the_session_next_time() {
     assert_eq!(
         harness
             .conversations
-            .provider_session(harness.agent.id, "scripted")
+            .provider_session(harness.agent.id, "scripted", ConversationScope::Direct)
             .expect("session"),
         Some("session-1".into())
     );
@@ -245,7 +245,9 @@ async fn runs_a_turn_and_resumes_the_session_next_time() {
     assert!(requests[0].prompt.contains("Prefer small changes."));
     assert!(requests[0].prompt.contains("- Uses pnpm"));
     assert!(requests[0].prompt.ends_with("What is in the repo?"));
-    assert_eq!(requests[0].access, WorkspaceAccess::ReadOnly);
+    // New agents may write to their workspace and use the internet.
+    assert_eq!(requests[0].access, WorkspaceAccess::WorkspaceWrite);
+    assert!(requests[0].network);
     assert_eq!(requests[0].model.as_deref(), Some("model-a"));
     assert_eq!(requests[0].reasoning_effort.as_deref(), Some("high"));
     assert_eq!(requests[1].session_id.as_deref(), Some("session-1"));
@@ -339,7 +341,7 @@ async fn resets_the_session_so_the_next_turn_starts_fresh() {
     assert_eq!(
         harness
             .conversations
-            .provider_session(harness.agent.id, "scripted")
+            .provider_session(harness.agent.id, "scripted", ConversationScope::Direct)
             .expect("session"),
         None
     );

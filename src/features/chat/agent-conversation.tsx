@@ -19,6 +19,12 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useConversation } from "@/hooks/use-conversation";
 import { useFreshIds } from "@/hooks/use-fresh-ids";
 import { isTauriRuntime, messagingUnavailableMessage } from "@/lib/desktop-api";
+import {
+  applyMention,
+  mentionQuery,
+  mentionSuggestions,
+  type MentionCandidate
+} from "@/lib/mentions";
 import { describeModel } from "@/lib/models";
 import {
   fadeUp,
@@ -221,7 +227,7 @@ function messagingUnavailableReason(provider?: ProviderSummary): string | undefi
 }
 
 /** Shown only while the agent's runtime status is `working`; the dots are its only ambient motion. */
-function WorkingIndicator({
+export function WorkingIndicator({
   agentName,
   currentAction
 }: {
@@ -355,7 +361,7 @@ function incomingAgentMessageBody(content: string): string {
   return separator >= 0 ? content.slice(separator + 2) : content;
 }
 
-function TimelineEntry({
+export function TimelineEntry({
   icon: Icon,
   text,
   time
@@ -373,29 +379,63 @@ function TimelineEntry({
   );
 }
 
-function Composer({
+export function Composer({
   agentName,
   working,
+  workingStatus,
   unavailableReason,
   error,
+  mentionCandidates,
   onSend,
   onCancel
 }: {
+  /** Who the message goes to: an agent or a group. */
   agentName: string;
   working: boolean;
+  /** Replaces the default "<name> is working." status while `working`. */
+  workingStatus?: string;
   unavailableReason?: string;
   error?: string;
+  /** Names suggested after typing `@`; without them there is no autocomplete. */
+  mentionCandidates?: MentionCandidate[];
   onSend: (content: string) => Promise<boolean>;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [caret, setCaret] = useState(0);
+  const [highlighted, setHighlighted] = useState(0);
+  const [dismissedAt, setDismissedAt] = useState<number>();
+  const textarea = useRef<HTMLTextAreaElement>(null);
   const disabled = Boolean(unavailableReason) || working || sending;
+  const typed = mentionCandidates?.length ? mentionQuery(draft, caret) : undefined;
+  const suggestions =
+    typed && typed.start !== dismissedAt
+      ? mentionSuggestions(typed.query, mentionCandidates ?? [])
+      : [];
+  const suggesting = suggestions.length > 0;
+  const activeSuggestion = suggestions[Math.min(highlighted, suggestions.length - 1)];
+
+  function updateDraft(value: string, nextCaret: number) {
+    setDraft(value);
+    setCaret(nextCaret);
+    setHighlighted(0);
+  }
+
+  function choose(candidate: MentionCandidate) {
+    if (!typed) return;
+    const next = applyMention(draft, caret, typed.start, candidate);
+    updateDraft(next.text, next.caret);
+    requestAnimationFrame(() => {
+      textarea.current?.focus();
+      textarea.current?.setSelectionRange(next.caret, next.caret);
+    });
+  }
 
   async function submit() {
     if (disabled || !draft.trim()) return;
     setSending(true);
-    if (await onSend(draft)) setDraft("");
+    if (await onSend(draft)) updateDraft("", 0);
     setSending(false);
   }
 
@@ -405,6 +445,24 @@ function Composer({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (suggesting && !event.nativeEvent.isComposing) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        setHighlighted((current) => (current + step + suggestions.length) % suggestions.length);
+        return;
+      }
+      if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
+        event.preventDefault();
+        choose(activeSuggestion);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDismissedAt(typed?.start);
+        return;
+      }
+    }
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       void submit();
@@ -414,10 +472,45 @@ function Composer({
   const statusText =
     error ??
     unavailableReason ??
-    (working ? `${agentName} is working.` : "Enter to send · Shift+Enter for a new line");
+    (working
+      ? (workingStatus ?? `${agentName} is working.`)
+      : "Enter to send · Shift+Enter for a new line");
   return (
     <div className="shrink-0 px-5 pb-3">
-      <form className="mx-auto max-w-3xl" onSubmit={handleSubmit}>
+      <form className="relative mx-auto max-w-3xl" onSubmit={handleSubmit}>
+        {suggesting ? (
+          <ul
+            id="mention-suggestions"
+            role="listbox"
+            aria-label="Mention a member"
+            className="absolute bottom-full left-0 z-10 mb-1 w-64 overflow-hidden rounded-lg border border-border bg-card p-1 shadow-panel"
+          >
+            {suggestions.map((candidate) => (
+              <li
+                key={candidate.id}
+                id={`mention-${candidate.id}`}
+                role="option"
+                aria-selected={candidate === activeSuggestion}
+                // Keep focus in the textarea while picking with the mouse.
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  choose(candidate);
+                }}
+                className={cn(
+                  "flex cursor-pointer items-baseline gap-2 rounded-md px-2 py-1.5 text-sm",
+                  candidate === activeSuggestion
+                    ? "bg-accent text-foreground"
+                    : "text-foreground-secondary"
+                )}
+              >
+                <span className="truncate font-medium">{candidate.name}</span>
+                {candidate.detail ? (
+                  <span className="truncate text-xs text-foreground-faint">{candidate.detail}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <div
           className={cn(
             "flex items-end gap-2 rounded-2xl border border-border bg-card py-2 pl-4 pr-2",
@@ -425,13 +518,29 @@ function Composer({
           )}
         >
           <textarea
+            ref={textarea}
             rows={1}
             value={draft}
             disabled={Boolean(unavailableReason)}
             aria-label={`Message ${agentName}`}
             aria-describedby="composer-status"
-            placeholder={`Message ${agentName}`}
-            onChange={(event) => setDraft(event.target.value)}
+            aria-autocomplete={mentionCandidates?.length ? "list" : undefined}
+            aria-controls={suggesting ? "mention-suggestions" : undefined}
+            aria-activedescendant={
+              suggesting && activeSuggestion ? `mention-${activeSuggestion.id}` : undefined
+            }
+            placeholder={
+              mentionCandidates?.length
+                ? `Message ${agentName} · @ to mention`
+                : `Message ${agentName}`
+            }
+            onChange={(event) =>
+              updateDraft(
+                event.target.value,
+                event.target.selectionStart ?? event.target.value.length
+              )
+            }
+            onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
             onKeyDown={handleKeyDown}
             className="max-h-40 min-h-8 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-sm text-foreground outline-none placeholder:text-foreground-faint disabled:cursor-not-allowed"
           />

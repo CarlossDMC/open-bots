@@ -1,5 +1,6 @@
 use crate::domain::{
     agents::{Agent, WorkspaceAccess},
+    groups::Group,
     memories::AgentMemory,
 };
 
@@ -35,12 +36,47 @@ pub fn first_turn_prompt(
     format!("<agent_context>\n{context}\n</agent_context>\n\n{message}")
 }
 
+/// Describes the group an agent answers in: its topic, its members, and how replies and
+/// mentions work. Sent at the start of the agent's provider session for the group.
+pub fn group_context(agent: &Agent, group: &Group, members: &[Agent]) -> String {
+    let roster = members
+        .iter()
+        .map(|member| {
+            let you = if member.id == agent.id { ", you" } else { "" };
+            format!("- {} ({}{you})", member.name, member.role)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "<group>\nYou are taking part in the Open Bots group \"{name}\" as {agent}.\n\
+         Topic: {topic}\nMembers:\n{roster}\n\
+         The user and the members take turns. Your normal reply is posted to the group for \
+         everyone to read. Mention a member as @Name to ask them to respond; nobody else is \
+         woken by your reply otherwise. Stay on the topic, keep replies concise, and do not \
+         repeat what others already said.\n</group>",
+        name = group.name,
+        agent = agent.name,
+        topic = group.topic,
+    )
+}
+
+/// Formats group messages as `Author: text` entries, oldest first.
+pub fn group_transcript(entries: &[(String, String)]) -> String {
+    entries
+        .iter()
+        .map(|(author, content)| format!("{author}: {content}"))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 /// Added only when the provider is connected to the Open Bots MCP server for this turn.
 const RUNTIME_TOOLS_NOTE: &str = "\nOpen Bots tools act on Open Bots for you. Their full \
      names are mcp__open_bots__task_create, mcp__open_bots__task_update, and \
      mcp__open_bots__task_list to manage your tasks and delegate work; \
      mcp__open_bots__agent_list and mcp__open_bots__agent_message to see and talk to the \
-     team; mcp__open_bots__approval_request to ask the user before a sensitive action; and \
+     team; mcp__open_bots__group_create, mcp__open_bots__group_list, and \
+     mcp__open_bots__group_post to open and use group conversations with several agents \
+     about one topic; mcp__open_bots__approval_request to ask the user before a sensitive action; and \
      mcp__open_bots__memory_save to keep a note for future sessions. If they are not listed \
      directly, look for them under those names. Save lasting preferences and corrections \
      from the user with memory_save. Delegated agents, messages, finished tasks, and \
@@ -131,6 +167,37 @@ mod tests {
         assert!(first_turn_prompt(&agent, &[], "Hello", false).contains("Access: workspace-write"));
         agent.permissions.shell = PermissionLevel::ApprovalRequired;
         assert!(first_turn_prompt(&agent, &[], "Hello", false).contains("Access: read-only"));
+    }
+
+    #[test]
+    fn group_context_lists_topic_members_and_mention_rules() {
+        let atlas = agent("");
+        let mut nova = agent("");
+        nova.id = Uuid::new_v4();
+        nova.name = "Nova".into();
+        nova.role = "Reviewer".into();
+        let group = Group::create(
+            crate::domain::groups::NewGroup {
+                name: "Release".into(),
+                topic: "Ship 0.4".into(),
+                member_ids: vec![atlas.id, nova.id],
+            },
+            crate::domain::groups::GroupAuthor::User,
+        )
+        .expect("group");
+        let context = group_context(&atlas, &group, &[atlas.clone(), nova]);
+        assert!(context.starts_with("<group>\n"));
+        assert!(context.contains("group \"Release\" as Atlas"));
+        assert!(context.contains("Topic: Ship 0.4"));
+        assert!(context.contains("- Atlas (Backend Engineer, you)\n- Nova (Reviewer)"));
+        assert!(context.contains("@Name"));
+        assert_eq!(
+            group_transcript(&[
+                ("User".into(), "Status?".into()),
+                ("Nova".into(), "Green.".into())
+            ]),
+            "User: Status?\n\nNova: Green."
+        );
     }
 
     #[test]

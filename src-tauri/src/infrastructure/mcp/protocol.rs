@@ -143,6 +143,7 @@ mod tests {
         TurnContext {
             agent_id: Uuid::nil(),
             chain_depth: 0,
+            group_id: None,
         }
     }
 

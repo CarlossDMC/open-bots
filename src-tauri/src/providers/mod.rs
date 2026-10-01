@@ -136,6 +136,8 @@ pub struct TurnRequest {
     pub prompt: String,
     pub workspace: PathBuf,
     pub access: WorkspaceAccess,
+    /// Whether the provider may fetch web pages and search the web.
+    pub network: bool,
     /// `None` keeps the provider's default model.
     pub model: Option<String>,
     pub reasoning_effort: Option<String>,

@@ -9,6 +9,11 @@
 //!   documented `sandbox_mode` config key and the workspace through the process directory.)
 //! - Model: `-m <model>` on both commands; reasoning effort through the documented
 //!   `model_reasoning_effort` config key (`-c model_reasoning_effort="<effort>"`).
+//! - Internet access: `-c web_search="live"` turns on the native web search tool (the
+//!   interactive `--search` flag is not accepted by `exec`), and in the workspace-write
+//!   sandbox `-c sandbox_workspace_write.network_access=true` lets commands reach the
+//!   network. The read-only sandbox keeps commands offline; web search still works there.
+//!   Both keys were checked against `codex-cli 0.159.3`.
 //! - The prompt is read from stdin (`-`) so it never appears in a command line.
 //! - Runtime tools: `-c mcp_servers.open_bots.url="<url>"`,
 //!   `-c mcp_servers.open_bots.bearer_token_env_var="OPEN_BOTS_MCP_TOKEN"` and
@@ -243,6 +248,15 @@ fn turn_command(request: &TurnRequest) -> LineCommand {
     }
     if let Some(effort) = &request.reasoning_effort {
         arguments.extend(["-c".into(), format!("model_reasoning_effort=\"{effort}\"")]);
+    }
+    if request.network {
+        arguments.extend(["-c".into(), "web_search=\"live\"".into()]);
+        if request.access == WorkspaceAccess::WorkspaceWrite {
+            arguments.extend([
+                "-c".into(),
+                "sandbox_workspace_write.network_access=true".into(),
+            ]);
+        }
     }
     match &request.session_id {
         None => arguments.extend([
@@ -511,11 +525,27 @@ mod tests {
             prompt: "List the files".into(),
             workspace: "/work/project".into(),
             access,
+            network: false,
             model: None,
             reasoning_effort: None,
             runtime_tools: None,
             mcp_servers: Vec::new(),
         }
+    }
+
+    #[test]
+    fn enables_web_search_and_sandbox_network_with_internet_access() {
+        let mut writable = request(None, WorkspaceAccess::WorkspaceWrite);
+        writable.network = true;
+        let arguments = turn_command(&writable).arguments.join(" ");
+        assert!(arguments.contains("-c web_search=\"live\""), "{arguments}");
+        assert!(arguments.contains("-c sandbox_workspace_write.network_access=true"));
+
+        let mut read_only = request(None, WorkspaceAccess::ReadOnly);
+        read_only.network = true;
+        let arguments = turn_command(&read_only).arguments.join(" ");
+        assert!(arguments.contains("web_search"));
+        assert!(!arguments.contains("network_access"));
     }
 
     #[test]

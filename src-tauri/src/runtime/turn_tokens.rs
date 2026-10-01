@@ -11,6 +11,8 @@ pub struct TurnContext {
     pub agent_id: Uuid,
     /// Chained turns behind the turn that holds the token.
     pub chain_depth: u32,
+    /// The group the turn answers in; absent for the agent's direct conversation.
+    pub group_id: Option<Uuid>,
 }
 
 /// Bearer tokens for the local MCP server, one per running turn. A token only works while
@@ -55,6 +57,7 @@ mod tests {
         let context = TurnContext {
             agent_id: Uuid::new_v4(),
             chain_depth: 2,
+            group_id: None,
         };
         let token = tokens.issue(context);
         assert_eq!(token.len(), 64);
