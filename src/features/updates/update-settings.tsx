@@ -1,5 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { AppUpdater } from "@/hooks/use-app-updater";
 import { downloadPercentage, type UpdateState } from "@/lib/updater";
 import { formatRelativeTime } from "@/lib/utils";
@@ -19,12 +20,10 @@ export function UpdateSettings({ updater }: { updater: AppUpdater }) {
       </div>
       <label className="flex items-center justify-between border-b border-border-subtle py-2.5">
         <span className="text-xs text-foreground-subtle">Check on launch</span>
-        <input
-          type="checkbox"
-          className="accent-foreground"
+        <Checkbox
           checked={updater.checkOnLaunch}
           disabled={unsupported}
-          onChange={(event) => updater.setCheckOnLaunch(event.target.checked)}
+          onCheckedChange={updater.setCheckOnLaunch}
         />
       </label>
       <div className="flex gap-2">

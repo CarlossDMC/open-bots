@@ -1,5 +1,6 @@
 import { BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { Notifications } from "@/hooks/use-notifications";
 
 export function NotificationSettings({ notifications }: { notifications: Notifications }) {
@@ -13,12 +14,10 @@ export function NotificationSettings({ notifications }: { notifications: Notific
             Shown while Open Bots is in the background
           </span>
         </span>
-        <input
-          type="checkbox"
-          className="accent-foreground"
+        <Checkbox
           checked={enabled}
           disabled={!supported}
-          onChange={(event) => notifications.setEnabled(event.target.checked)}
+          onCheckedChange={notifications.setEnabled}
         />
       </label>
       <div className="flex items-center gap-3">

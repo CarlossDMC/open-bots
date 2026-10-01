@@ -1,6 +1,7 @@
 import { CalendarClock, Loader2, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { useAgentRoutines } from "@/hooks/use-agent-routines";
@@ -145,12 +146,10 @@ export function AgentRoutinesSection({ agentId }: { agentId: string }) {
         <ul className="mt-3 divide-y divide-border-subtle">
           {routines.map((routine) => (
             <li key={routine.id} className="flex items-center gap-3 py-2">
-              <input
-                type="checkbox"
-                className="accent-foreground"
+              <Checkbox
                 aria-label={`Enable ${routine.name}`}
                 checked={routine.enabled}
-                onChange={(event) => void setEnabled(routine, event.target.checked)}
+                onCheckedChange={(checked) => void setEnabled(routine, checked)}
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-foreground-secondary">
