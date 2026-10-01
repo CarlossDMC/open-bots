@@ -93,6 +93,8 @@ Application services coordinate domain behavior and ports. Infrastructure implem
 
 Provider-specific code must remain inside a dedicated adapter and be registered through `ProviderRegistry`.
 
+Follow the standard adapter shape in [docs/providers.md](docs/providers.md). CLI adapters build on `CliProgram` in `src-tauri/src/providers/cli.rs` instead of reimplementing detection, the turn loop, or error mapping.
+
 Before implementing a provider:
 
 1. Identify the official CLI or documented API.

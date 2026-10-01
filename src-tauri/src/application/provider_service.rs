@@ -146,6 +146,7 @@ mod tests {
                 plan: None,
                 windows: vec![UsageWindow {
                     duration_minutes: Some(300),
+                    scope: None,
                     used_percent: 40,
                     resets_at: None,
                 }],

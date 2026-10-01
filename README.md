@@ -145,6 +145,7 @@ Read the [architecture guide](docs/architecture.md) and [architecture decisions]
 | Mock provider                           | Functional; makes no model calls |
 | Tasks UI                                | Demonstration data               |
 | OpenAI Codex CLI conversations          | Functional; resumes sessions     |
+| Claude Code CLI conversations           | Functional; resumes sessions     |
 | Workspace writes by agents              | Read-only until permissions UI   |
 | Persistent agent loop                   | Not implemented                  |
 | Agent collaboration and delegation      | Not implemented                  |
@@ -305,7 +306,8 @@ Losing the private key means existing installations can no longer verify new upd
 ### Expansion — later
 
 - [x] OpenAI Codex CLI adapter
-- [ ] Claude Code and Gemini CLI adapters
+- [x] Claude Code CLI adapter
+- [ ] Gemini CLI adapter
 - [x] Scheduled routines and desktop notifications
 - [ ] Git worktrees
 - [ ] Remote workers and provider plugins

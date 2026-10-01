@@ -20,7 +20,7 @@ use infrastructure::{
     },
     process::{TokioJsonRpcProcessClient, TokioLineProcessRunner},
 };
-use providers::{CodexProvider, MockProvider, ProviderRegistry};
+use providers::{ClaudeProvider, CodexProvider, MockProvider, ProviderRegistry};
 use runtime::event_bus::EventBus;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;
@@ -68,6 +68,9 @@ pub fn run() {
                 Arc::new(TokioLineProcessRunner),
                 Arc::new(TokioJsonRpcProcessClient),
             )))?;
+            registry.register(Arc::new(ClaudeProvider::new(Arc::new(
+                TokioLineProcessRunner,
+            ))))?;
             let providers = Arc::new(registry);
             let event_bus = EventBus::new(128);
             forward_runtime_events(app.handle().clone(), &event_bus);

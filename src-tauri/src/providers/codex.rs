@@ -29,35 +29,37 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 
 use super::{
-    AgentProvider, DetectionStatus, ProviderCapability, ProviderKind, ProviderModel,
-    ProviderSummary, ProviderUsage, TurnEvent, TurnEvents, TurnOutcome, TurnRequest, UsageWindow,
+    cli::{CliOutput, CliProgram, SignInCheck, StreamEvent, TurnStreamParser},
+    AgentProvider, ProviderCapability, ProviderModel, ProviderSummary, ProviderUsage, TurnEvent,
+    TurnEvents, TurnOutcome, TurnRequest, UsageWindow,
 };
 use crate::{
     domain::agents::WorkspaceAccess,
     error::{AppError, AppResult},
     infrastructure::process::{
         JsonRpcError, JsonRpcExit, JsonRpcMessage, JsonRpcProcessClient, JsonRpcSession,
-        LineCommand, LineProcessExit, LineProcessRunner,
+        LineCommand, LineProcessRunner,
     },
     runtime::cancellation::CancellationSignal,
 };
 
 const PROGRAM: &str = "codex";
-/// Longest stderr excerpt included in a user-visible error.
-const MAX_ERROR_EXCERPT: usize = 300;
 /// How long one app-server read may take, including server start-up.
 const APP_SERVER_TIMEOUT: Duration = Duration::from_secs(15);
 /// Upper bound on `model/list` pages, so a misbehaving cursor cannot loop forever.
 const MAX_MODEL_PAGES: usize = 5;
 
 pub struct CodexProvider {
-    runner: Arc<dyn LineProcessRunner>,
+    cli: CliProgram,
     rpc: Arc<dyn JsonRpcProcessClient>,
 }
 
 impl CodexProvider {
     pub fn new(runner: Arc<dyn LineProcessRunner>, rpc: Arc<dyn JsonRpcProcessClient>) -> Self {
-        Self { runner, rpc }
+        Self {
+            cli: CliProgram::new(PROGRAM, "Codex", runner),
+            rpc,
+        }
     }
 
     /// Sends one request to a fresh `codex app-server` and returns its result.
@@ -112,44 +114,15 @@ impl CodexProvider {
                     })?
                     .map_err(failure)
             }
-            JsonRpcExit::ProgramNotFound => Err(AppError::Provider(
-                "the `codex` command was not found on PATH".into(),
-            )),
+            JsonRpcExit::ProgramNotFound => Err(self.cli.not_found()),
             JsonRpcExit::TimedOut => Err(AppError::Provider(format!(
                 "Codex app-server did not answer within {} seconds",
                 APP_SERVER_TIMEOUT.as_secs()
             ))),
             JsonRpcExit::Exited { code, stderr_tail } => {
-                let code = code.map_or_else(|| "a signal".into(), |code| code.to_string());
-                let excerpt = error_excerpt(&stderr_tail);
-                Err(AppError::Provider(if excerpt.is_empty() {
-                    format!("Codex app-server exited with {code}")
-                } else {
-                    format!("Codex app-server exited with {code}: {excerpt}")
-                }))
+                Err(self.cli.exit_error("Codex app-server", code, &stderr_tail))
             }
         }
-    }
-
-    async fn run_quiet(&self, arguments: &[&str]) -> AppResult<(LineProcessExit, Vec<String>)> {
-        let mut lines = Vec::new();
-        let exit = self
-            .runner
-            .run(
-                LineCommand {
-                    program: PROGRAM.into(),
-                    arguments: arguments
-                        .iter()
-                        .map(|argument| (*argument).into())
-                        .collect(),
-                    working_directory: None,
-                    stdin: None,
-                },
-                &mut |line| lines.push(line.to_owned()),
-                CancellationSignal::never(),
-            )
-            .await?;
-        Ok((exit, lines))
     }
 }
 
@@ -164,44 +137,16 @@ impl AgentProvider for CodexProvider {
     }
 
     async fn detect(&self) -> AppResult<ProviderSummary> {
-        let summary = |status, detail: String| ProviderSummary {
-            id: self.id().into(),
-            name: self.name().into(),
-            kind: ProviderKind::Cli,
-            status,
-            detail,
-            capabilities: self.capabilities(),
-        };
-        let (version_exit, version_lines) = self.run_quiet(&["--version"]).await?;
-        let version = match version_exit {
-            LineProcessExit::ProgramNotFound => {
-                return Ok(summary(
-                    DetectionStatus::NotInstalled,
-                    "The `codex` command was not found on PATH.".into(),
-                ));
-            }
-            LineProcessExit::Finished { success: true, .. } => version_lines
-                .first()
-                .map(|line| line.trim().to_owned())
-                .unwrap_or_else(|| "codex".into()),
-            _ => {
-                return Ok(summary(
-                    DetectionStatus::Unknown,
-                    "`codex --version` did not succeed.".into(),
-                ));
-            }
-        };
-        let (login_exit, _) = self.run_quiet(&["login", "status"]).await?;
-        Ok(match login_exit {
-            LineProcessExit::Finished { success: true, .. } => summary(
-                DetectionStatus::Available,
-                format!("{version}. Signed in through the Codex CLI."),
-            ),
-            _ => summary(
-                DetectionStatus::Unknown,
-                format!("{version}. Sign-in could not be confirmed; run `codex login`."),
-            ),
-        })
+        self.cli
+            .detect(
+                self,
+                SignInCheck {
+                    arguments: &["login", "status"],
+                    confirmed: CliOutput::succeeded,
+                    login_hint: "codex login",
+                },
+            )
+            .await
     }
 
     fn capabilities(&self) -> Vec<ProviderCapability> {
@@ -247,58 +192,15 @@ impl AgentProvider for CodexProvider {
         events: TurnEvents,
         cancellation: CancellationSignal,
     ) -> AppResult<TurnOutcome> {
-        let mut session_id = request.session_id.clone();
-        let mut failure: Option<String> = None;
-        let command = turn_command(&request);
-        let exit = self
-            .runner
-            .run(
-                command,
-                &mut |line| match parse_event(line) {
-                    Some(CodexEvent::Turn(event)) => {
-                        if let TurnEvent::SessionStarted { session_id: id } = &event {
-                            session_id = Some(id.clone());
-                        }
-                        let _ = events.send(event);
-                    }
-                    Some(CodexEvent::Failed(message)) => failure = Some(message),
-                    None => {}
-                },
+        self.cli
+            .run_turn(
+                turn_command(&request),
+                request.session_id.clone(),
+                &mut CodexStreamParser,
+                &events,
                 cancellation,
             )
-            .await?;
-
-        match exit {
-            LineProcessExit::Cancelled => Ok(TurnOutcome {
-                session_id,
-                cancelled: true,
-            }),
-            LineProcessExit::ProgramNotFound => Err(AppError::Provider(
-                "the `codex` command was not found on PATH".into(),
-            )),
-            LineProcessExit::Finished {
-                success,
-                code,
-                stderr_tail,
-            } => {
-                if let Some(message) = failure {
-                    return Err(AppError::Provider(format!("Codex turn failed: {message}")));
-                }
-                if !success {
-                    let excerpt = error_excerpt(&stderr_tail);
-                    let code = code.map_or_else(|| "a signal".into(), |code| code.to_string());
-                    return Err(AppError::Provider(if excerpt.is_empty() {
-                        format!("Codex exited with {code}")
-                    } else {
-                        format!("Codex exited with {code}: {excerpt}")
-                    }));
-                }
-                Ok(TurnOutcome {
-                    session_id,
-                    cancelled: false,
-                })
-            }
-        }
+            .await
     }
 }
 
@@ -351,28 +253,31 @@ fn turn_command(request: &TurnRequest) -> LineCommand {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum CodexEvent {
-    Turn(TurnEvent),
-    Failed(String),
+/// Codex events are self-contained, so the parser keeps no state between lines.
+struct CodexStreamParser;
+
+impl TurnStreamParser for CodexStreamParser {
+    fn parse_line(&mut self, line: &str) -> Vec<StreamEvent> {
+        parse_event(line).into_iter().collect()
+    }
 }
 
 /// Maps one JSONL line to a provider-neutral event. Unknown or internal events (such as
 /// reasoning items) are ignored so newer CLI versions do not break the adapter.
-fn parse_event(line: &str) -> Option<CodexEvent> {
+fn parse_event(line: &str) -> Option<StreamEvent> {
     let value: Value = serde_json::from_str(line.trim()).ok()?;
     let text = |value: &Value, key: &str| value.get(key).and_then(Value::as_str).map(str::to_owned);
     match value.get("type")?.as_str()? {
-        "thread.started" => Some(CodexEvent::Turn(TurnEvent::SessionStarted {
+        "thread.started" => Some(StreamEvent::Turn(TurnEvent::SessionStarted {
             session_id: text(&value, "thread_id")?,
         })),
-        "turn.failed" => Some(CodexEvent::Failed(
+        "turn.failed" => Some(StreamEvent::Failed(
             value
                 .get("error")
                 .and_then(|error| text(error, "message"))
                 .unwrap_or_else(|| "the turn failed".into()),
         )),
-        "error" => Some(CodexEvent::Failed(
+        "error" => Some(StreamEvent::Failed(
             text(&value, "message").unwrap_or_else(|| "the CLI reported an error".into()),
         )),
         kind @ ("item.started" | "item.completed") => {
@@ -381,15 +286,17 @@ fn parse_event(line: &str) -> Option<CodexEvent> {
             let id = text(item, "id").unwrap_or_default();
             match (kind, item_type) {
                 (_, "reasoning") => None,
-                ("item.completed", "agent_message") => Some(CodexEvent::Turn(TurnEvent::Message {
-                    text: text(item, "text").filter(|text| !text.trim().is_empty())?,
-                })),
+                ("item.completed", "agent_message") => {
+                    Some(StreamEvent::Turn(TurnEvent::Message {
+                        text: text(item, "text").filter(|text| !text.trim().is_empty())?,
+                    }))
+                }
                 ("item.started", "agent_message") => None,
-                ("item.started", _) => Some(CodexEvent::Turn(TurnEvent::ActionStarted {
+                ("item.started", _) => Some(StreamEvent::Turn(TurnEvent::ActionStarted {
                     id,
                     summary: action_summary(item, item_type),
                 })),
-                _ => Some(CodexEvent::Turn(TurnEvent::ActionCompleted {
+                _ => Some(StreamEvent::Turn(TurnEvent::ActionCompleted {
                     id,
                     summary: action_summary(item, item_type),
                     succeeded: action_succeeded(item),
@@ -478,6 +385,7 @@ fn parse_usage(
             let used = window.get("usedPercent").and_then(Value::as_i64)?;
             Some(UsageWindow {
                 duration_minutes: window.get("windowDurationMins").and_then(Value::as_i64),
+                scope: None,
                 used_percent: u8::try_from(used.clamp(0, 100)).unwrap_or(100),
                 resets_at: window
                     .get("resetsAt")
@@ -500,54 +408,18 @@ fn parse_usage(
     })
 }
 
-fn error_excerpt(stderr: &str) -> String {
-    let line = stderr
-        .lines()
-        .rev()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or_default();
-    line.chars().take(MAX_ERROR_EXCERPT).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        infrastructure::process::LineProcessExit,
+        providers::{
+            testing::{finished, ScriptedRunner},
+            DetectionStatus,
+        },
+    };
     use std::sync::Mutex;
     use tokio::sync::mpsc;
-
-    /// Replays scripted stdout lines and records every command it receives.
-    struct ScriptedRunner {
-        lines: Vec<&'static str>,
-        exit: LineProcessExit,
-        commands: Mutex<Vec<LineCommand>>,
-    }
-
-    impl ScriptedRunner {
-        fn new(lines: Vec<&'static str>, exit: LineProcessExit) -> Arc<Self> {
-            Arc::new(Self {
-                lines,
-                exit,
-                commands: Mutex::new(Vec::new()),
-            })
-        }
-    }
-
-    #[async_trait]
-    impl LineProcessRunner for ScriptedRunner {
-        async fn run(
-            &self,
-            command: LineCommand,
-            on_line: &mut (dyn for<'line> FnMut(&'line str) + Send),
-            _cancellation: CancellationSignal,
-        ) -> AppResult<LineProcessExit> {
-            self.commands.lock().expect("commands").push(command);
-            for line in &self.lines {
-                on_line(line);
-            }
-            Ok(self.exit.clone())
-        }
-    }
 
     /// Returns one scripted app-server exit and records every session it receives.
     struct ScriptedRpc {
@@ -577,19 +449,11 @@ mod tests {
     }
 
     fn codex_rpc(rpc: Arc<ScriptedRpc>) -> CodexProvider {
-        CodexProvider::new(ScriptedRunner::new(Vec::new(), finished(true)), rpc)
+        CodexProvider::new(ScriptedRunner::single(Vec::new(), finished(true)), rpc)
     }
 
     fn answered(result: Value) -> JsonRpcExit {
         JsonRpcExit::Completed(vec![Ok(json!({})), Ok(result)])
-    }
-
-    fn finished(success: bool) -> LineProcessExit {
-        LineProcessExit::Finished {
-            success,
-            code: Some(if success { 0 } else { 1 }),
-            stderr_tail: String::new(),
-        }
     }
 
     fn request(session_id: Option<&str>, access: WorkspaceAccess) -> TurnRequest {
@@ -650,7 +514,7 @@ mod tests {
     fn parses_the_documented_event_stream() {
         assert_eq!(
             parse_event(r#"{"type":"thread.started","thread_id":"0199a213"}"#),
-            Some(CodexEvent::Turn(TurnEvent::SessionStarted {
+            Some(StreamEvent::Turn(TurnEvent::SessionStarted {
                 session_id: "0199a213".into()
             }))
         );
@@ -658,7 +522,7 @@ mod tests {
             parse_event(
                 r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"bash -lc ls","status":"in_progress"}}"#
             ),
-            Some(CodexEvent::Turn(TurnEvent::ActionStarted {
+            Some(StreamEvent::Turn(TurnEvent::ActionStarted {
                 id: "item_1".into(),
                 summary: "bash -lc ls".into()
             }))
@@ -667,7 +531,7 @@ mod tests {
             parse_event(
                 r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"bash -lc ls","status":"failed","exit_code":2}}"#
             ),
-            Some(CodexEvent::Turn(TurnEvent::ActionCompleted {
+            Some(StreamEvent::Turn(TurnEvent::ActionCompleted {
                 id: "item_1".into(),
                 summary: "bash -lc ls".into(),
                 succeeded: false
@@ -677,13 +541,13 @@ mod tests {
             parse_event(
                 r#"{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Repo contains docs."}}"#
             ),
-            Some(CodexEvent::Turn(TurnEvent::Message {
+            Some(StreamEvent::Turn(TurnEvent::Message {
                 text: "Repo contains docs.".into()
             }))
         );
         assert_eq!(
             parse_event(r#"{"type":"turn.failed","error":{"message":"usage limit reached"}}"#),
-            Some(CodexEvent::Failed("usage limit reached".into()))
+            Some(StreamEvent::Failed("usage limit reached".into()))
         );
     }
 
@@ -703,7 +567,7 @@ mod tests {
 
     #[tokio::test]
     async fn runs_a_turn_and_reports_the_new_session() {
-        let runner = ScriptedRunner::new(
+        let runner = ScriptedRunner::single(
             vec![
                 r#"{"type":"thread.started","thread_id":"thread-9"}"#,
                 r#"{"type":"turn.started"}"#,
@@ -745,7 +609,7 @@ mod tests {
 
     #[tokio::test]
     async fn reports_turn_failures_and_exit_errors() {
-        let failed = ScriptedRunner::new(
+        let failed = ScriptedRunner::single(
             vec![r#"{"type":"turn.failed","error":{"message":"usage limit reached"}}"#],
             finished(false),
         );
@@ -760,7 +624,7 @@ mod tests {
             matches!(result, Err(AppError::Provider(message)) if message.contains("usage limit"))
         );
 
-        let crashed = ScriptedRunner::new(
+        let crashed = ScriptedRunner::single(
             Vec::new(),
             LineProcessExit::Finished {
                 success: false,
@@ -782,7 +646,7 @@ mod tests {
 
     #[tokio::test]
     async fn reports_cancelled_turns() {
-        let runner = ScriptedRunner::new(Vec::new(), LineProcessExit::Cancelled);
+        let runner = ScriptedRunner::single(Vec::new(), LineProcessExit::Cancelled);
         let outcome = codex(runner)
             .run_turn(
                 request(Some("thread-1"), WorkspaceAccess::ReadOnly),
@@ -797,11 +661,11 @@ mod tests {
 
     #[tokio::test]
     async fn detects_installation_and_sign_in() {
-        let missing = ScriptedRunner::new(Vec::new(), LineProcessExit::ProgramNotFound);
+        let missing = ScriptedRunner::single(Vec::new(), LineProcessExit::ProgramNotFound);
         let summary = codex(missing).detect().await.expect("detect");
         assert_eq!(summary.status, DetectionStatus::NotInstalled);
 
-        let installed = ScriptedRunner::new(vec!["codex-cli 0.159.2"], finished(true));
+        let installed = ScriptedRunner::single(vec!["codex-cli 0.159.2"], finished(true));
         let summary = codex(installed.clone()).detect().await.expect("detect");
         assert_eq!(summary.status, DetectionStatus::Available);
         assert!(summary.detail.starts_with("codex-cli 0.159.2"));
@@ -932,11 +796,13 @@ mod tests {
             [
                 UsageWindow {
                     duration_minutes: Some(300),
+                    scope: None,
                     used_percent: 2,
                     resets_at: DateTime::from_timestamp(1_790_880_511, 0),
                 },
                 UsageWindow {
                     duration_minutes: Some(10080),
+                    scope: None,
                     used_percent: 100,
                     resets_at: None,
                 }

@@ -130,6 +130,8 @@ export interface ProviderModel {
 
 export interface UsageWindow {
   durationMinutes?: number | null;
+  /** Narrower allowance such as one model family; absent when all usage counts. */
+  scope?: string | null;
   usedPercent: number;
   resetsAt?: string | null;
 }

@@ -1,6 +1,10 @@
+mod claude;
+mod cli;
 mod codex;
 mod mock;
 mod registry;
+#[cfg(test)]
+mod testing;
 
 use std::path::PathBuf;
 
@@ -15,6 +19,7 @@ use crate::{
     runtime::cancellation::CancellationSignal,
 };
 
+pub use claude::ClaudeProvider;
 pub use codex::CodexProvider;
 pub use mock::MockProvider;
 pub use registry::ProviderRegistry;
@@ -91,6 +96,9 @@ pub struct ProviderUsage {
 #[serde(rename_all = "camelCase")]
 pub struct UsageWindow {
     pub duration_minutes: Option<i64>,
+    /// Narrower allowance the window applies to, such as one model family; `None` means all
+    /// usage counts against it.
+    pub scope: Option<String>,
     pub used_percent: u8,
     pub resets_at: Option<DateTime<Utc>>,
 }
