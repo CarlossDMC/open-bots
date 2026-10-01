@@ -20,7 +20,7 @@ The domain contains agents, tasks, events, approvals, artifacts, identity, permi
 
 ### Agent runtime
 
-`ConversationService` runs one turn per user message. It records the message, moves the agent to `working`, and runs the provider turn in the background. It persists each reply and publishes `message.created`, `tool.*`, and `agent.started`/`completed`/`failed`/`cancelled` events. One turn runs per agent at a time, and Stop cancels it by killing the provider process. A provider session id is stored per agent and provider, so the next message resumes the same session. The first turn of a session carries the agent's identity, instructions, and memories as a leading context block. Turns that were running when the application closed are marked failed on the next start. Routine triggers, approvals, and tasks do not start turns yet.
+`ConversationService` runs one turn per user message. It records the message, moves the agent to `working`, and runs the provider turn in the background. It persists each reply and publishes `message.created`, `tool.*`, and `agent.started`/`completed`/`failed`/`cancelled` events. One turn runs per agent at a time, and Stop cancels it by killing the provider process. A provider session id is stored per agent and provider, so the next message resumes the same session. The first turn of a session carries a leading context block: a short runtime preamble (non-interactive turns, workspace, access level), then the agent's identity, instructions, and memories. Turns that were running when the application closed are marked failed on the next start. Routine triggers, approvals, and tasks do not start turns yet.
 
 ### Provider adapters
 
@@ -50,7 +50,7 @@ Tools declare an identifier, description, input contract, required permission, a
 
 ### Persistence
 
-SQLite stores application state. SQL is restricted to repository implementations and migrations. Migrations are ordered scripts applied once each based on SQLite `user_version`. Artifacts will store metadata in SQLite and content as local files; only the domain boundary exists today. Agent memories are short local notes in `agent_memories`; they will be added to provider system instructions once sessions exist.
+SQLite stores application state. SQL is restricted to repository implementations and migrations. Migrations are ordered scripts applied once each based on SQLite `user_version`. Artifacts will store metadata in SQLite and content as local files; only the domain boundary exists today. Agent memories are short local notes in `agent_memories`; they are sent with the agent context on the first turn of each provider session.
 
 ### Routines
 
