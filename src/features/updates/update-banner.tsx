@@ -63,14 +63,14 @@ function Banner({
     <div
       className={
         tone === "error"
-          ? "flex items-center gap-3 border-b border-red-900/60 bg-red-950/20 px-8 py-2 text-xs text-red-300"
-          : "flex items-center gap-3 border-b border-zinc-800/80 bg-zinc-950 px-8 py-2 text-xs text-zinc-300"
+          ? "flex items-center gap-3 border-b border-danger-border bg-danger-muted px-8 py-2 text-xs text-danger-foreground"
+          : "flex items-center gap-3 border-b border-border/80 bg-card px-8 py-2 text-xs text-foreground-secondary"
       }
     >
       <div className="flex flex-1 items-center gap-3">{children}</div>
       {onDismiss && (
         <button
-          className="text-zinc-500 hover:text-zinc-200"
+          className="text-foreground-subtle hover:text-foreground"
           aria-label="Dismiss update notice"
           onClick={onDismiss}
         >

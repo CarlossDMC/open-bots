@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { browserStorage } from "@/lib/browser-storage";
 import {
   checkForAppUpdate,
   describeUpdateError,
@@ -8,14 +9,6 @@ import {
   writeAutoCheckPreference,
   type UpdateState
 } from "@/lib/updater";
-
-function browserStorage(): Storage | undefined {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined;
-  }
-}
 
 export interface AppUpdater {
   state: UpdateState;

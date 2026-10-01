@@ -11,17 +11,17 @@ export function UpdateSettings({ updater }: { updater: AppUpdater }) {
     state.status === "checking" || state.status === "downloading" || state.status === "restarting";
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between border-b border-zinc-900 py-2.5">
-        <span className="text-xs text-zinc-500">Status</span>
-        <span className="text-xs text-zinc-300" role="status">
+      <div className="flex items-center justify-between border-b border-border-subtle py-2.5">
+        <span className="text-xs text-foreground-subtle">Status</span>
+        <span className="text-xs text-foreground-secondary" role="status">
           {describeState(state)}
         </span>
       </div>
-      <label className="flex items-center justify-between border-b border-zinc-900 py-2.5">
-        <span className="text-xs text-zinc-500">Check on launch</span>
+      <label className="flex items-center justify-between border-b border-border-subtle py-2.5">
+        <span className="text-xs text-foreground-subtle">Check on launch</span>
         <input
           type="checkbox"
-          className="accent-zinc-300"
+          className="accent-foreground"
           checked={updater.checkOnLaunch}
           disabled={unsupported}
           onChange={(event) => updater.setCheckOnLaunch(event.target.checked)}

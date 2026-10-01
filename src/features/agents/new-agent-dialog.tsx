@@ -39,18 +39,18 @@ export function NewAgentDialog({ open, busy, onClose, onSubmit }: NewAgentDialog
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/65 p-5 backdrop-blur-sm"
+      className="fixed inset-0 z-50 grid place-items-center bg-overlay p-5 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="new-agent-title"
     >
-      <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950 shadow-panel">
-        <div className="flex items-center justify-between border-b border-zinc-900 px-5 py-4">
+      <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-xl border border-border bg-card shadow-panel">
+        <div className="flex items-center justify-between border-b border-border-subtle px-5 py-4">
           <div>
-            <h2 id="new-agent-title" className="font-semibold text-zinc-100">
+            <h2 id="new-agent-title" className="font-semibold text-foreground">
               Create agent
             </h2>
-            <p className="mt-0.5 text-xs text-zinc-500">
+            <p className="mt-0.5 text-xs text-foreground-subtle">
               Define a persistent identity. Runtime execution is not enabled yet.
             </p>
           </div>
@@ -62,7 +62,10 @@ export function NewAgentDialog({ open, busy, onClose, onSubmit }: NewAgentDialog
           <div className="grid grid-cols-[auto_1fr] items-end gap-4">
             <AgentAvatar color={color} variant="orbital" status="idle" size="lg" />
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-zinc-400" htmlFor="name">
+              <label
+                className="mb-1.5 block text-xs font-medium text-foreground-muted"
+                htmlFor="name"
+              >
                 Name
               </label>
               <Input id="name" name="name" required minLength={2} placeholder="Atlas" autoFocus />
@@ -101,7 +104,7 @@ export function NewAgentDialog({ open, busy, onClose, onSubmit }: NewAgentDialog
                     "size-7 rounded-full border-2 transition",
                     swatches[option],
                     color === option
-                      ? "border-white scale-110"
+                      ? "border-foreground scale-110"
                       : "border-transparent opacity-70 hover:opacity-100"
                   )}
                 />
@@ -117,11 +120,11 @@ export function NewAgentDialog({ open, busy, onClose, onSubmit }: NewAgentDialog
             />
           </Field>
           {error && (
-            <p className="text-xs text-red-400" role="alert">
+            <p className="text-xs text-danger" role="alert">
               {error}
             </p>
           )}
-          <div className="flex justify-end gap-2 border-t border-zinc-900 pt-4">
+          <div className="flex justify-end gap-2 border-t border-border-subtle pt-4">
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
@@ -143,17 +146,17 @@ function formText(data: FormData, field: string): string {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-medium text-zinc-400">{label}</span>
+      <span className="mb-1.5 block text-xs font-medium text-foreground-muted">{label}</span>
       {children}
     </label>
   );
 }
 
 const swatches: Record<AgentColor, string> = {
-  indigo: "bg-indigo-500",
-  cyan: "bg-cyan-500",
-  emerald: "bg-emerald-500",
-  amber: "bg-amber-500",
-  rose: "bg-rose-500",
-  violet: "bg-violet-500"
+  indigo: "bg-identity-indigo",
+  cyan: "bg-identity-cyan",
+  emerald: "bg-identity-emerald",
+  amber: "bg-identity-amber",
+  rose: "bg-identity-rose",
+  violet: "bg-identity-violet"
 };

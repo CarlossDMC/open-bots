@@ -17,16 +17,16 @@ export function TasksPage({ tasks, agents }: { tasks: AgentTask[]; agents: Agent
         {tasks.map((task) => (
           <div key={task.id} className="table-row grid-cols-[1.7fr_.7fr_.8fr_.5fr]">
             <div>
-              <p className="text-sm text-zinc-200">{task.title}</p>
-              <p className="mt-0.5 truncate text-xs text-zinc-600">{task.description}</p>
+              <p className="text-sm text-foreground">{task.title}</p>
+              <p className="mt-0.5 truncate text-xs text-foreground-faint">{task.description}</p>
             </div>
             <StatusBadge status={task.status} />
-            <span className="text-xs text-zinc-400">
+            <span className="text-xs text-foreground-muted">
               {task.assignedAgentId
                 ? (names.get(task.assignedAgentId) ?? "Unknown agent")
                 : "Unassigned"}
             </span>
-            <span className="text-xs text-zinc-600">
+            <span className="text-xs text-foreground-faint">
               {formatRelativeTime(task.createdAt, new Date("2026-01-10T11:00:00Z"))}
             </span>
           </div>
@@ -39,8 +39,8 @@ export function TasksPage({ tasks, agents }: { tasks: AgentTask[]; agents: Agent
 function PageHeading({ title, description }: { title: string; description: string }) {
   return (
     <header className="mb-7">
-      <h1 className="text-xl font-semibold tracking-tight text-zinc-100">{title}</h1>
-      <p className="mt-1 text-sm text-zinc-500">{description}</p>
+      <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
+      <p className="mt-1 text-sm text-foreground-subtle">{description}</p>
     </header>
   );
 }

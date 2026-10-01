@@ -1,5 +1,6 @@
 import { Database, Download, Monitor, Puzzle, SlidersHorizontal } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ThemeSelector } from "@/features/appearance/theme-selector";
 import { UpdateSettings } from "@/features/updates/update-settings";
 import type { AppUpdater } from "@/hooks/use-app-updater";
 import type { ProviderSummary } from "@/types/domain";
@@ -14,8 +15,10 @@ export function SettingsPage({
   return (
     <div className="animate-fade-in">
       <header className="mb-7">
-        <h1 className="text-xl font-semibold text-zinc-100">Settings</h1>
-        <p className="mt-1 text-sm text-zinc-500">Local application and provider configuration.</p>
+        <h1 className="text-xl font-semibold text-foreground">Settings</h1>
+        <p className="mt-1 text-sm text-foreground-subtle">
+          Local application and provider configuration.
+        </p>
       </header>
       <div className="grid gap-4 lg:grid-cols-2">
         <SettingsCard icon={SlidersHorizontal} title="General">
@@ -25,11 +28,11 @@ export function SettingsPage({
         <SettingsCard icon={Puzzle} title="Providers">
           <div className="space-y-3">
             {providers.map((provider) => (
-              <div key={provider.id} className="rounded-md border border-zinc-900 bg-zinc-950 p-3">
+              <div key={provider.id} className="rounded-md border border-border-subtle bg-card p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-zinc-200">{provider.name}</p>
-                    <p className="mt-0.5 text-[10px] uppercase tracking-wider text-zinc-600">
+                    <p className="text-sm text-foreground">{provider.name}</p>
+                    <p className="mt-0.5 text-2xs uppercase tracking-wider text-foreground-faint">
                       {provider.kind} adapter
                     </p>
                   </div>
@@ -43,13 +46,13 @@ export function SettingsPage({
                     }
                   />
                 </div>
-                <p className="mt-2 text-xs leading-5 text-zinc-500">{provider.detail}</p>
+                <p className="mt-2 text-xs leading-5 text-foreground-subtle">{provider.detail}</p>
               </div>
             ))}
           </div>
         </SettingsCard>
         <SettingsCard icon={Monitor} title="Appearance">
-          <Row name="Theme" value="Dark" />
+          <Row name="Theme" value={<ThemeSelector />} />
           <Row name="Density" value="Compact" />
         </SettingsCard>
         <SettingsCard icon={Database} title="Data">
@@ -82,11 +85,11 @@ function SettingsCard({
     </section>
   );
 }
-function Row({ name, value }: { name: string; value: string }) {
+function Row({ name, value }: { name: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between border-b border-zinc-900 py-2.5 last:border-0">
-      <span className="text-xs text-zinc-500">{name}</span>
-      <span className="text-xs text-zinc-300">{value}</span>
+    <div className="flex items-center justify-between border-b border-border-subtle py-2.5 last:border-0">
+      <span className="text-xs text-foreground-subtle">{name}</span>
+      <div className="text-xs text-foreground-secondary">{value}</div>
     </div>
   );
 }

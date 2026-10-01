@@ -62,3 +62,7 @@ Infrastructure implements domain/application contracts. Domain code never import
 ## Future distribution
 
 Application services are designed as a boundary so the runtime may later move from the desktop process to a local daemon or remote worker. Local operation remains the default, and cloud identity must remain optional.
+
+## Frontend design system
+
+Visual values come from `src/styles/tokens.css` and are exposed as semantic Tailwind utilities. Theme state lives in `ThemeProvider` (`src/app/theme-provider.tsx`) with pure logic in `src/lib/theme.ts`. See [design-system.md](design-system.md) and [ADR 0005](adr/0005-design-tokens-and-motion.md).

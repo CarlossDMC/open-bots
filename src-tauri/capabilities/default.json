@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Default desktop capability",
   "windows": ["main"],
-  "permissions": ["core:default", "updater:default", "process:allow-restart"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme",
+    "updater:default",
+    "process:allow-restart"
+  ]
 }

@@ -1,25 +1,27 @@
 import { cn, titleCase } from "@/lib/utils";
 
 const statusStyles: Record<string, string> = {
-  working: "bg-blue-400",
-  running: "bg-blue-400",
-  waiting: "bg-amber-400",
-  paused: "bg-zinc-500",
-  pending: "bg-zinc-500",
-  queued: "bg-violet-400",
-  failed: "bg-red-400",
-  blocked: "bg-red-400",
-  completed: "bg-emerald-400",
-  approved: "bg-emerald-400",
-  denied: "bg-red-400",
-  cancelled: "bg-zinc-600",
-  idle: "bg-zinc-500"
+  working: "bg-status-running",
+  running: "bg-status-running",
+  waiting: "bg-status-waiting",
+  paused: "bg-status-neutral",
+  pending: "bg-status-neutral",
+  queued: "bg-status-queued",
+  failed: "bg-status-danger",
+  blocked: "bg-status-danger",
+  completed: "bg-status-success",
+  approved: "bg-status-success",
+  denied: "bg-status-danger",
+  cancelled: "bg-status-neutral/70",
+  idle: "bg-status-neutral"
 };
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 text-xs text-zinc-400", className)}>
-      <span className={cn("size-1.5 rounded-full", statusStyles[status] ?? "bg-zinc-500")} />
+    <span
+      className={cn("inline-flex items-center gap-1.5 text-xs text-foreground-muted", className)}
+    >
+      <span className={cn("size-1.5 rounded-full", statusStyles[status] ?? "bg-status-neutral")} />
       {titleCase(status)}
     </span>
   );

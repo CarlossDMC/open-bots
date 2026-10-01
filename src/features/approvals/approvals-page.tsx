@@ -13,30 +13,34 @@ export function ApprovalsPage({
   return (
     <div className="animate-fade-in">
       <header className="mb-7">
-        <h1 className="text-xl font-semibold text-zinc-100">Approvals</h1>
-        <p className="mt-1 text-sm text-zinc-500">Human decisions required by runtime policy.</p>
+        <h1 className="text-xl font-semibold text-foreground">Approvals</h1>
+        <p className="mt-1 text-sm text-foreground-subtle">
+          Human decisions required by runtime policy.
+        </p>
       </header>
       {pending.length === 0 ? (
-        <div className="grid min-h-64 place-items-center rounded-lg border border-dashed border-zinc-800 text-center">
+        <div className="grid min-h-64 place-items-center rounded-lg border border-dashed border-border text-center">
           <div>
-            <ShieldCheck className="mx-auto mb-3 text-zinc-600" size={25} />
-            <p className="text-sm text-zinc-300">No pending approvals</p>
-            <p className="mt-1 text-xs text-zinc-600">Policy-gated actions will appear here.</p>
+            <ShieldCheck className="mx-auto mb-3 text-foreground-faint" size={25} />
+            <p className="text-sm text-foreground-secondary">No pending approvals</p>
+            <p className="mt-1 text-xs text-foreground-faint">
+              Policy-gated actions will appear here.
+            </p>
           </div>
         </div>
       ) : (
         <div className="space-y-3">
           {pending.map((approval) => (
             <article key={approval.id} className="panel max-w-2xl">
-              <p className="text-sm text-zinc-400">
-                <span className="font-medium text-zinc-200">{approval.agentName}</span> wants to
+              <p className="text-sm text-foreground-muted">
+                <span className="font-medium text-foreground">{approval.agentName}</span> wants to
                 execute:
               </p>
-              <pre className="my-4 overflow-x-auto rounded-md border border-zinc-800 bg-black/40 p-3 font-mono text-xs text-zinc-200">
+              <pre className="my-4 overflow-x-auto rounded-md border border-border bg-muted p-3 font-mono text-xs text-foreground">
                 {approval.action}
               </pre>
               <p className="label">Reason</p>
-              <p className="mt-1 text-sm text-zinc-400">{approval.reason}</p>
+              <p className="mt-1 text-sm text-foreground-muted">{approval.reason}</p>
               <div className="mt-5 flex gap-2">
                 <Button size="sm" onClick={() => onResolve(approval.id, "approved")}>
                   Approve
@@ -45,7 +49,7 @@ export function ApprovalsPage({
                   Deny
                 </Button>
               </div>
-              <p className="mt-3 text-[10px] text-amber-500/70">
+              <p className="mt-3 text-2xs text-warning">
                 Demonstration only — decisions are not persisted yet.
               </p>
             </article>

@@ -1,4 +1,14 @@
-import { Bot, ListTodo, Search, X } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  CheckSquare2,
+  ListTodo,
+  MessageSquare,
+  Search,
+  Settings,
+  SunMoon,
+  X
+} from "lucide-react";
 import { useEffect } from "react";
 import type { ViewId } from "./sidebar";
 
@@ -6,12 +16,14 @@ export function CommandPalette({
   open,
   onClose,
   onNavigate,
-  onCreateAgent
+  onCreateAgent,
+  onToggleTheme
 }: {
   open: boolean;
   onClose: () => void;
   onNavigate: (view: ViewId) => void;
   onCreateAgent: () => void;
+  onToggleTheme: () => void;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -28,24 +40,24 @@ export function CommandPalette({
   };
   return (
     <div
-      className="fixed inset-0 z-[60] flex justify-center bg-black/60 pt-[16vh] backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex justify-center bg-overlay pt-[16vh] backdrop-blur-sm"
       onMouseDown={onClose}
     >
       <div
-        className="h-fit w-full max-w-lg overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-panel"
+        className="h-fit w-full max-w-lg overflow-hidden rounded-xl border border-border bg-card shadow-panel"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center gap-3 border-b border-zinc-900 px-4">
-          <Search size={16} className="text-zinc-600" />
+        <div className="flex items-center gap-3 border-b border-border-subtle px-4">
+          <Search size={16} className="text-foreground-faint" />
           <input
-            className="h-12 flex-1 bg-transparent text-sm text-zinc-200 outline-none placeholder:text-zinc-600"
+            className="h-12 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-foreground-faint"
             placeholder="Type a command…"
             autoFocus
           />
-          <X size={14} className="cursor-pointer text-zinc-700" onClick={onClose} />
+          <X size={14} className="cursor-pointer text-foreground-faint" onClick={onClose} />
         </div>
         <div className="p-2">
-          <p className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-widest text-zinc-700">
+          <p className="px-2 py-1.5 text-2xs font-medium uppercase tracking-widest text-foreground-faint">
             Actions
           </p>
           <Command
@@ -55,11 +67,32 @@ export function CommandPalette({
             onClick={() => execute(onCreateAgent)}
           />
           <Command
+            icon={MessageSquare}
+            label="View Agents"
+            onClick={() => execute(() => onNavigate("chat"))}
+          />
+          <Command
             icon={ListTodo}
             label="View Tasks"
             shortcut="T"
             onClick={() => execute(() => onNavigate("tasks"))}
           />
+          <Command
+            icon={Activity}
+            label="View Activity"
+            onClick={() => execute(() => onNavigate("activity"))}
+          />
+          <Command
+            icon={CheckSquare2}
+            label="View Approvals"
+            onClick={() => execute(() => onNavigate("approvals"))}
+          />
+          <Command
+            icon={Settings}
+            label="Open Settings"
+            onClick={() => execute(() => onNavigate("settings"))}
+          />
+          <Command icon={SunMoon} label="Toggle Theme" onClick={() => execute(onToggleTheme)} />
         </div>
       </div>
     </div>
@@ -74,17 +107,17 @@ function Command({
 }: {
   icon: typeof Bot;
   label: string;
-  shortcut: string;
+  shortcut?: string;
   onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+      className="flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-sm text-foreground-muted hover:bg-muted hover:text-foreground"
     >
       <Icon size={15} />
       {label}
-      <kbd className="ml-auto text-[10px] text-zinc-700">{shortcut}</kbd>
+      {shortcut && <kbd className="ml-auto text-2xs text-foreground-faint">{shortcut}</kbd>}
     </button>
   );
 }

@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { demoAgents, demoProviders } from "@/lib/demo-data";
+import type { ResolvedTheme } from "@/lib/theme";
 import type { Agent, NewAgentInput, ProviderSummary } from "@/types/domain";
 
 export function isTauriRuntime(): boolean {
@@ -36,4 +38,10 @@ export async function createAgent(input: NewAgentInput): Promise<Agent> {
 export async function listProviders(): Promise<ProviderSummary[]> {
   if (!isTauriRuntime()) return demoProviders;
   return invoke<ProviderSummary[]>("list_providers");
+}
+
+/** Aligns the native title bar with the app theme. `null` lets it follow the operating system. */
+export async function setNativeWindowTheme(theme: ResolvedTheme | null): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await getCurrentWindow().setTheme(theme);
 }

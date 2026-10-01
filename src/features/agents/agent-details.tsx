@@ -1,30 +1,27 @@
-import { ArrowLeft, FolderGit2, Settings2 } from "lucide-react";
+import { FolderGit2, Settings2 } from "lucide-react";
 import { AgentAvatar } from "./agent-avatar";
-import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { titleCase } from "@/lib/utils";
 import type { Agent } from "@/types/domain";
 
-export function AgentDetails({ agent, onBack }: { agent: Agent; onBack: () => void }) {
+export function AgentDetails({ agent }: { agent: Agent }) {
   return (
     <div className="animate-fade-in">
-      <Button variant="ghost" size="sm" onClick={onBack} className="mb-5 -ml-2">
-        <ArrowLeft size={14} /> Agents
-      </Button>
-      <div className="flex items-center gap-4 border-b border-zinc-900 pb-6">
+      <div className="flex items-center gap-4 border-b border-border-subtle pb-6">
         <AgentAvatar
           color={agent.identityColor}
           variant={agent.avatarVariant}
+          seed={agent.id}
           status={agent.status}
           size="lg"
         />
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-zinc-100">{agent.name}</h1>
+            <h1 className="text-xl font-semibold text-foreground">{agent.name}</h1>
             <StatusBadge status={agent.status} />
           </div>
-          <p className="mt-1 text-sm text-zinc-400">{agent.role}</p>
-          <p className="mt-1 text-xs text-zinc-600">{agent.description}</p>
+          <p className="mt-1 text-sm text-foreground-muted">{agent.role}</p>
+          <p className="mt-1 text-xs text-foreground-faint">{agent.description}</p>
         </div>
       </div>
       <div className="mt-6 grid gap-5 lg:grid-cols-5">
@@ -44,8 +41,8 @@ export function AgentDetails({ agent, onBack }: { agent: Agent; onBack: () => vo
           <h2 className="section-title">
             <FolderGit2 size={14} /> Workspace
           </h2>
-          <p className="break-all text-sm text-zinc-300">{agent.workspace}</p>
-          <p className="mt-2 text-xs text-zinc-600">Local directory workspace</p>
+          <p className="break-all text-sm text-foreground-secondary">{agent.workspace}</p>
+          <p className="mt-2 text-xs text-foreground-faint">Local directory workspace</p>
         </section>
         <section className="panel lg:col-span-5">
           <h2 className="section-title">
@@ -54,7 +51,7 @@ export function AgentDetails({ agent, onBack }: { agent: Agent; onBack: () => vo
           <div className="grid gap-6 md:grid-cols-2">
             <div>
               <p className="label">Instructions</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-300">
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground-secondary">
                 {agent.instructions || "No persistent instructions."}
               </p>
             </div>
@@ -65,10 +62,10 @@ export function AgentDetails({ agent, onBack }: { agent: Agent; onBack: () => vo
                   ([key, value]) => (
                     <div
                       key={key}
-                      className="rounded border border-zinc-900 bg-zinc-950 px-2.5 py-2"
+                      className="rounded border border-border-subtle bg-card px-2.5 py-2"
                     >
-                      <p className="text-[11px] text-zinc-600">{titleCase(key)}</p>
-                      <p className="mt-0.5 text-xs text-zinc-300">{titleCase(value)}</p>
+                      <p className="text-xs-plus text-foreground-faint">{titleCase(key)}</p>
+                      <p className="mt-0.5 text-xs text-foreground-secondary">{titleCase(value)}</p>
                     </div>
                   )
                 )}
@@ -85,7 +82,7 @@ function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="label">{label}</dt>
-      <dd className="mt-1 text-sm text-zinc-300">{value}</dd>
+      <dd className="mt-1 text-sm text-foreground-secondary">{value}</dd>
     </div>
   );
 }

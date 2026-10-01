@@ -1,0 +1,126 @@
+/*
+ * Open Bots design tokens: the single source for colors, typography, shape, and elevation.
+ * Change the design system here. Components consume these values only through the Tailwind
+ * utilities declared in tailwind.config.ts. Colors are HSL channels so utilities can apply
+ * opacity, for example bg-card/35. `:root` is the light theme; `.dark` overrides it.
+ */
+:root {
+  color-scheme: light;
+
+  /* SF Pro through the system font on Apple platforms; bundled Inter (closest open match) elsewhere. */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter Variable", "Inter", ui-sans-serif,
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --text-3xs: 9px;
+  --text-2xs: 10px;
+  --text-xs-plus: 11px;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --shadow-panel: 0 14px 40px rgb(0 0 0 / 0.08);
+
+  --background: 0 0% 100%;
+  --surface: 240 5% 97%;
+  --card: 0 0% 100%;
+  --muted: 240 5% 93%;
+  --accent: 240 5% 89%;
+  --overlay: 240 10% 4%;
+  --overlay-opacity: 0.25;
+
+  --border: 240 6% 88%;
+  --border-subtle: 240 5% 93%;
+  --border-strong: 240 5% 78%;
+  --ring: 240 5% 50%;
+  --selection: 243 75% 59%;
+
+  --foreground: 240 10% 4%;
+  --foreground-secondary: 240 4% 20%;
+  --foreground-muted: 240 4% 32%;
+  --foreground-subtle: 240 4% 44%;
+  --foreground-faint: 240 4% 58%;
+
+  --primary: 240 6% 10%;
+  --primary-foreground: 0 0% 98%;
+
+  --status-running: 221 83% 53%;
+  --status-waiting: 32 95% 44%;
+  --status-queued: 262 83% 58%;
+  --status-success: 161 94% 30%;
+  --status-danger: 0 72% 51%;
+  --status-neutral: 240 5% 65%;
+
+  --danger: 0 72% 51%;
+  --danger-foreground: 0 74% 42%;
+  --danger-muted: 0 86% 97%;
+  --danger-border: 0 96% 89%;
+  --warning: 32 95% 44%;
+  --warning-foreground: 23 83% 31%;
+  --warning-muted: 48 100% 96%;
+  --warning-border: 48 97% 77%;
+
+  --identity-indigo: 243 75% 59%;
+  --identity-cyan: 192 91% 36%;
+  --identity-emerald: 161 94% 30%;
+  --identity-amber: 32 95% 44%;
+  --identity-rose: 347 77% 50%;
+  --identity-violet: 262 83% 58%;
+
+  --avatar-eye: 240 10% 8%;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --shadow-panel: 0 14px 40px rgb(0 0 0 / 0.22);
+
+  --background: 0 0% 14%;
+  --surface: 0 0% 10%;
+  --card: 0 0% 16%;
+  --muted: 0 0% 18%;
+  --accent: 0 0% 21%;
+  --overlay: 0 0% 0%;
+  --overlay-opacity: 0.6;
+
+  --border: 0 0% 24%;
+  --border-subtle: 0 0% 19%;
+  --border-strong: 0 0% 32%;
+  --ring: 240 4% 46%;
+  --selection: 234 89% 74%;
+
+  --foreground: 240 5% 94%;
+  --foreground-secondary: 240 5% 84%;
+  --foreground-muted: 240 5% 65%;
+  --foreground-subtle: 0 0% 58%;
+  --foreground-faint: 0 0% 45%;
+
+  --primary: 240 5% 96%;
+  --primary-foreground: 240 10% 4%;
+
+  --status-running: 213 94% 68%;
+  --status-waiting: 43 96% 56%;
+  --status-queued: 255 92% 76%;
+  --status-success: 158 64% 52%;
+  --status-danger: 0 91% 71%;
+  --status-neutral: 240 4% 46%;
+
+  --danger: 0 91% 71%;
+  --danger-foreground: 0 94% 82%;
+  --danger-muted: 0 45% 7%;
+  --danger-border: 0 50% 22%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 46 97% 65%;
+  --warning-muted: 30 50% 6%;
+  --warning-border: 25 55% 18%;
+
+  --identity-indigo: 234 89% 74%;
+  --identity-cyan: 188 86% 53%;
+  --identity-emerald: 158 64% 52%;
+  --identity-amber: 43 96% 56%;
+  --identity-rose: 351 95% 71%;
+  --identity-violet: 255 92% 76%;
+
+  --avatar-eye: 240 10% 8%;
+}

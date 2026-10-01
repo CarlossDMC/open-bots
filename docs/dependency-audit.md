@@ -1,10 +1,14 @@
 # Dependency Audit
 
-Last checked: 2026-09-30
+Last checked: 2026-10-01
 
 ## JavaScript
 
 `npm audit --audit-level=high` reports no known vulnerabilities for the locked dependency tree.
+
+`motion` (13.x) was added for UI animation. It wraps `framer-motion` of the same version, which depends on `motion-dom`, `motion-utils`, and `tslib`. The app loads it through `LazyMotion` with DOM animation features only.
+
+`@fontsource-variable/inter` (5.x, OFL-1.1) bundles the Inter variable font locally, so the UI does not fetch fonts from the network. It has no runtime dependencies. On Apple platforms the system font (SF Pro) is used first.
 
 ## Rust
 
