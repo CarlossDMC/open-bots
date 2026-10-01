@@ -11,12 +11,13 @@ use std::sync::Arc;
 
 use application::{
     run_routine_scheduler, ActivityService, AgentService, ApprovalService, ConversationService,
-    MemoryService, ProviderService, RoutineService,
+    MemoryService, ProviderService, RoutineService, TaskService,
 };
 use infrastructure::{
     database::{
         Database, SqliteAgentRepository, SqliteApprovalRepository, SqliteConversationRepository,
         SqliteEventRepository, SqliteMemoryRepository, SqliteRoutineRepository,
+        SqliteTaskRepository,
     },
     process::{TokioJsonRpcProcessClient, TokioLineProcessRunner},
 };
@@ -35,6 +36,7 @@ pub struct AppState {
     memories: MemoryService,
     activity: ActivityService,
     routines: Arc<RoutineService>,
+    tasks: Arc<TaskService>,
     conversations: Arc<ConversationService>,
     providers: Arc<ProviderRegistry>,
     provider_catalog: ProviderService,
@@ -59,6 +61,7 @@ pub fn run() {
                 Arc::new(SqliteApprovalRepository::new(Arc::clone(&database)));
             let memory_repository = Arc::new(SqliteMemoryRepository::new(Arc::clone(&database)));
             let routine_repository = Arc::new(SqliteRoutineRepository::new(Arc::clone(&database)));
+            let task_repository = Arc::new(SqliteTaskRepository::new(Arc::clone(&database)));
             let conversation_repository =
                 Arc::new(SqliteConversationRepository::new(Arc::clone(&database)));
             let event_repository = Arc::new(SqliteEventRepository::new(database));
@@ -103,6 +106,12 @@ pub fn run() {
                 event_repository.clone(),
                 event_bus.clone(),
             );
+            let tasks = Arc::new(TaskService::new(
+                task_repository,
+                agent_repository.clone(),
+                event_repository.clone(),
+                event_bus.clone(),
+            ));
             let routines = Arc::new(RoutineService::new(
                 routine_repository,
                 agent_repository,
@@ -118,6 +127,7 @@ pub fn run() {
                 memories,
                 activity,
                 routines,
+                tasks,
                 conversations,
                 providers,
                 provider_catalog,
@@ -142,6 +152,10 @@ pub fn run() {
             commands::create_routine,
             commands::set_routine_enabled,
             commands::delete_routine,
+            commands::list_tasks,
+            commands::create_task,
+            commands::assign_task,
+            commands::update_task_status,
             commands::list_messages,
             commands::send_message,
             commands::cancel_turn

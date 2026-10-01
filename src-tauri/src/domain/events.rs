@@ -45,6 +45,11 @@ pub enum EventType {
     TaskCompleted,
     #[serde(rename = "task.failed")]
     TaskFailed,
+    #[serde(rename = "task.cancelled")]
+    TaskCancelled,
+    /// A status change that neither starts nor finishes the task, such as blocked.
+    #[serde(rename = "task.updated")]
+    TaskUpdated,
     #[serde(rename = "agent.message")]
     AgentMessage,
     #[serde(rename = "tool.requested")]

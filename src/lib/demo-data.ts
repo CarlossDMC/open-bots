@@ -74,6 +74,7 @@ export const demoTasks: AgentTask[] = [
     assignedAgentId: "demo-atlas",
     workspaceId: "inventory",
     createdAt: "2026-01-10T10:41:00.000Z",
+    updatedAt: "2026-01-10T10:41:00.000Z",
     startedAt: "2026-01-10T10:42:00.000Z"
   },
   {
@@ -83,7 +84,8 @@ export const demoTasks: AgentTask[] = [
     status: "waiting",
     assignedAgentId: "demo-nova",
     workspaceId: "inventory",
-    createdAt: "2026-01-10T10:43:00.000Z"
+    createdAt: "2026-01-10T10:43:00.000Z",
+    updatedAt: "2026-01-10T10:43:00.000Z"
   },
   {
     id: "task-3",
@@ -93,6 +95,7 @@ export const demoTasks: AgentTask[] = [
     assignedAgentId: "demo-orbit",
     workspaceId: "inventory",
     createdAt: "2026-01-10T09:30:00.000Z",
+    updatedAt: "2026-01-10T09:30:00.000Z",
     completedAt: "2026-01-10T10:20:00.000Z"
   }
 ];

@@ -7,6 +7,7 @@ mod memory_service;
 mod provider_service;
 mod routine_scheduler;
 mod routine_service;
+mod task_service;
 
 pub use activity_service::{ActivityService, MAX_ACTIVITY_EVENTS};
 pub use agent_service::AgentService;
@@ -16,3 +17,4 @@ pub use memory_service::MemoryService;
 pub use provider_service::{ProviderService, ProviderUsageReport};
 pub use routine_scheduler::{run_routine_scheduler, MAX_SCHEDULER_WAIT};
 pub use routine_service::RoutineService;
+pub use task_service::{TaskActor, TaskService};

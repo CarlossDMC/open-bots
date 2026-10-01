@@ -23,7 +23,7 @@ import {
   listProviders,
   resolveApproval
 } from "@/lib/desktop-api";
-import { demoProviders, demoTasks } from "@/lib/demo-data";
+import { demoProviders } from "@/lib/demo-data";
 import type {
   Agent,
   ApprovalDecision,
@@ -159,7 +159,7 @@ export function App() {
     [events, agents]
   );
   let page: React.ReactNode;
-  if (view === "tasks") page = <TasksPage tasks={demoTasks} agents={agents} />;
+  if (view === "tasks") page = <TasksPage agents={agents} />;
   else if (view === "activity") page = <ActivityPage events={activity} error={activityError} />;
   else if (view === "approvals")
     page = (

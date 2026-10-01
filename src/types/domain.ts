@@ -59,12 +59,23 @@ export interface AgentTask {
   title: string;
   description: string;
   status: TaskStatus;
-  assignedAgentId?: string;
-  parentTaskId?: string;
+  assignedAgentId?: string | null;
+  /** The agent that created the task; absent when the user created it. */
+  createdByAgentId?: string | null;
+  parentTaskId?: string | null;
   workspaceId: string;
+  /** What the assignee reported when the task finished. */
+  result?: string | null;
   createdAt: string;
-  startedAt?: string;
-  completedAt?: string;
+  updatedAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+}
+
+export interface NewTaskInput {
+  title: string;
+  description: string;
+  assignedAgentId?: string;
 }
 
 export interface ActivityEvent {

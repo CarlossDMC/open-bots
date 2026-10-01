@@ -4,6 +4,7 @@ mod conversation_repository;
 mod event_repository;
 mod memory_repository;
 mod routine_repository;
+mod task_repository;
 
 use std::{path::Path, sync::Mutex};
 
@@ -17,14 +18,16 @@ pub use conversation_repository::{ConversationRepository, SqliteConversationRepo
 pub use event_repository::{EventRepository, SqliteEventRepository};
 pub use memory_repository::{MemoryRepository, SqliteMemoryRepository};
 pub use routine_repository::{RoutineRepository, SqliteRoutineRepository};
+pub use task_repository::{SqliteTaskRepository, TaskRepository};
 
 /// Ordered schema migrations. Each entry runs once, when `user_version` is below its version.
-const MIGRATIONS: [(i64, &str); 5] = [
+const MIGRATIONS: [(i64, &str); 6] = [
     (1, include_str!("migrations/0001_initial.sql")),
     (2, include_str!("migrations/0002_agent_memories.sql")),
     (3, include_str!("migrations/0003_routines.sql")),
     (4, include_str!("migrations/0004_conversations.sql")),
     (5, include_str!("migrations/0005_agent_models.sql")),
+    (6, include_str!("migrations/0006_task_ownership.sql")),
 ];
 
 pub struct Database {
@@ -82,6 +85,10 @@ fn migrate(connection: &Connection) -> AppResult<()> {
 mod tests {
     use super::*;
 
+    fn latest_version() -> i64 {
+        MIGRATIONS[MIGRATIONS.len() - 1].0
+    }
+
     fn user_version(connection: &Connection) -> i64 {
         connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -93,7 +100,7 @@ mod tests {
         let database = Database::in_memory().expect("database");
         database
             .with_connection(|connection| {
-                assert_eq!(user_version(connection), 5);
+                assert_eq!(user_version(connection), latest_version());
                 Ok(())
             })
             .expect("connection");
@@ -113,11 +120,13 @@ mod tests {
         let database = Database::open(&path).expect("upgraded database");
         database
             .with_connection(|connection| {
-                assert_eq!(user_version(connection), 5);
+                assert_eq!(user_version(connection), latest_version());
                 connection.prepare("SELECT id FROM agent_memories LIMIT 0")?;
                 connection.prepare("SELECT id FROM routines LIMIT 0")?;
                 connection.prepare("SELECT id FROM conversation_messages LIMIT 0")?;
                 connection.prepare("SELECT model, reasoning_effort FROM agents LIMIT 0")?;
+                connection
+                    .prepare("SELECT created_by_agent_id, result, updated_at FROM tasks LIMIT 0")?;
                 Ok(())
             })
             .expect("connection");

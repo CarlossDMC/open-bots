@@ -6,22 +6,26 @@ import {
   demoApprovals,
   demoEvents,
   demoProviders,
+  demoTasks,
   demoUsageReports
 } from "@/lib/demo-data";
 import type { ResolvedTheme } from "@/lib/theme";
 import type {
   Agent,
   AgentMemory,
+  AgentTask,
   ConversationMessage,
   ApprovalDecision,
   ApprovalRequest,
   NewAgentInput,
   NewRoutineInput,
+  NewTaskInput,
   ProviderModel,
   ProviderSummary,
   ProviderUsageReport,
   Routine,
-  RuntimeEvent
+  RuntimeEvent,
+  TaskStatus
 } from "@/types/domain";
 
 /** Mirrors `RUNTIME_EVENT_CHANNEL` in `src-tauri/src/lib.rs`. */
@@ -144,6 +148,28 @@ export async function removeMemory(memory: AgentMemory): Promise<void> {
     return;
   }
   await invoke("remove_memory", { id: memory.id });
+}
+
+/** Tasks are persisted by the desktop runtime; the browser preview shows sample tasks. */
+export const tasksUnavailableMessage = "Managing tasks requires the desktop runtime.";
+
+export async function listTasks(): Promise<AgentTask[]> {
+  if (!isTauriRuntime()) return demoTasks;
+  return invoke<AgentTask[]>("list_tasks");
+}
+
+export async function createTask(input: NewTaskInput): Promise<AgentTask> {
+  if (!isTauriRuntime()) throw new Error(tasksUnavailableMessage);
+  return invoke<AgentTask>("create_task", { input });
+}
+
+export async function updateTaskStatus(
+  id: string,
+  status: TaskStatus,
+  result?: string
+): Promise<AgentTask> {
+  if (!isTauriRuntime()) throw new Error(tasksUnavailableMessage);
+  return invoke<AgentTask>("update_task_status", { id, status, result: result ?? null });
 }
 
 /** Routines are scheduled by the desktop runtime; the browser preview cannot run them. */

@@ -2,7 +2,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::{
-    application::ProviderUsageReport,
+    application::{ProviderUsageReport, TaskActor},
     domain::{
         agents::{Agent, NewAgent},
         approvals::{ApprovalRequest, ApprovalStatus},
@@ -10,6 +10,7 @@ use crate::{
         events::DomainEvent,
         memories::AgentMemory,
         routines::{NewRoutine, Routine},
+        tasks::{NewTask, Task, TaskStatus},
     },
     error::AppResult,
     providers::{ProviderModel, ProviderSummary},
@@ -116,6 +117,35 @@ pub fn set_routine_enabled(
 #[tauri::command]
 pub fn delete_routine(id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
     state.routines.delete(id)
+}
+
+#[tauri::command]
+pub fn list_tasks(state: State<'_, AppState>) -> AppResult<Vec<Task>> {
+    state.tasks.list()
+}
+
+/// Tasks created from the desktop UI always belong to the user.
+#[tauri::command]
+pub fn create_task(mut input: NewTask, state: State<'_, AppState>) -> AppResult<Task> {
+    input.created_by_agent_id = None;
+    state.tasks.create(input)
+}
+
+#[tauri::command]
+pub fn assign_task(id: Uuid, agent_id: Uuid, state: State<'_, AppState>) -> AppResult<Task> {
+    state.tasks.assign(id, agent_id, TaskActor::User)
+}
+
+#[tauri::command]
+pub fn update_task_status(
+    id: Uuid,
+    status: TaskStatus,
+    result: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Task> {
+    state
+        .tasks
+        .update_status(id, status, result, TaskActor::User)
 }
 
 #[tauri::command]
