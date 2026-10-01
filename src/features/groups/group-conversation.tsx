@@ -1,10 +1,14 @@
 import { AnimatePresence, m, useReducedMotion } from "motion/react";
-import { Info, Loader2, Sparkles, Trash2, Users } from "lucide-react";
+import { Eraser, Info, Sparkles, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Markdown, MentionLink } from "@/components/ui/markdown";
 import { AgentAvatar } from "@/features/agents/agent-avatar";
-import { Composer, TimelineEntry, WorkingIndicator } from "@/features/chat/agent-conversation";
+import {
+  Composer,
+  ConfirmPrompt,
+  TimelineEntry,
+  WorkingIndicator
+} from "@/features/chat/agent-conversation";
 import { useFreshIds } from "@/hooks/use-fresh-ids";
 import { useGroupConversation } from "@/hooks/use-group-conversation";
 import { groupsUnavailableMessage, isTauriRuntime } from "@/lib/desktop-api";
@@ -27,8 +31,8 @@ export function GroupConversation({
   /** Opens a mentioned member's own conversation. */
   onOpenAgent?: (agent: Agent) => void;
 }) {
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [confirming, setConfirming] = useState<"clear" | "delete">();
+  const [busy, setBusy] = useState(false);
   const conversation = useGroupConversation(group.id);
   const members = group.memberIds
     .map((id) => agents.find((agent) => agent.id === id))
@@ -67,12 +71,14 @@ export function GroupConversation({
     reduceMotion
   ]);
 
-  async function confirmDelete() {
-    setDeleting(true);
-    const deleted = await onDelete(group);
-    setDeleting(false);
-    if (!deleted) setConfirmingDelete(false);
+  async function runConfirmed(action: "clear" | "delete") {
+    setBusy(true);
+    const done = action === "clear" ? await conversation.clear() : await onDelete(group);
+    setBusy(false);
+    if (done) setConfirming(undefined);
   }
+  const headerButton =
+    "grid size-8 place-items-center rounded-md text-foreground-subtle transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent";
 
   const createdBy = group.createdBy;
   const creator =
@@ -111,33 +117,48 @@ export function GroupConversation({
               </li>
             ) : null}
           </ul>
-          {confirmingDelete ? (
-            <>
-              <span className="text-xs text-foreground-subtle">Delete this group?</span>
-              <Button
-                size="sm"
-                variant="danger"
-                disabled={deleting}
-                onClick={() => void confirmDelete()}
-              >
-                {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                Delete
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirmingDelete(false)}>
-                Cancel
-              </Button>
-            </>
+          {confirming ? (
+            <ConfirmPrompt
+              prompt={
+                confirming === "clear"
+                  ? "Delete every message in this group?"
+                  : "Delete this group?"
+              }
+              label={confirming === "clear" ? "Clear" : "Delete"}
+              icon={confirming === "clear" ? Eraser : Trash2}
+              variant="danger"
+              busy={busy}
+              disabled={confirming === "clear" && active}
+              onConfirm={() => void runConfirmed(confirming)}
+              onCancel={() => setConfirming(undefined)}
+            />
           ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmingDelete(true)}
-              disabled={Boolean(unavailableReason)}
-              aria-label="Delete group"
-              title="Delete group"
-              className="grid size-8 place-items-center rounded-md text-foreground-subtle transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
-            >
-              <Trash2 size={15} strokeWidth={1.8} />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirming("clear")}
+                disabled={Boolean(unavailableReason) || active}
+                aria-label="Clear group conversation"
+                title={
+                  active
+                    ? "The group can be cleared once members stop answering"
+                    : "Clear conversation: delete every message and start over"
+                }
+                className={headerButton}
+              >
+                <Eraser size={15} strokeWidth={1.8} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirming("delete")}
+                disabled={Boolean(unavailableReason)}
+                aria-label="Delete group"
+                title="Delete group"
+                className={headerButton}
+              >
+                <Trash2 size={15} strokeWidth={1.8} />
+              </button>
+            </>
           )}
         </div>
       </header>

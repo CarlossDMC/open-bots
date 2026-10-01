@@ -261,6 +261,45 @@ impl GroupService {
         Ok(())
     }
 
+    /// Deletes the group's messages and its members' sessions in it, keeping the group and
+    /// its members. A group that is answering must be stopped first.
+    pub fn clear(&self, group_id: Uuid) -> AppResult<()> {
+        let _rounds = self.lock_rounds()?;
+        let group = self.find(group_id)?;
+        if group.round.is_active() {
+            return Err(AppError::Validation(
+                "members are answering; stop the group before clearing it".into(),
+            ));
+        }
+        self.groups.clear_messages(group_id)?;
+        self.conversations.forget_group_sessions(group_id)?;
+        self.publish(
+            EventType::GroupCleared,
+            group_id,
+            json!({ "groupId": group_id, "name": group.name }),
+        )?;
+        tracing::info!(group_id = %group_id, "group cleared");
+        Ok(())
+    }
+
+    /// Takes a deleted agent out of every round, so the next member answers in its place.
+    pub fn forget_agent(&self, agent_id: Uuid) -> AppResult<()> {
+        let _rounds = self.lock_rounds()?;
+        for mut group in self.groups.list()? {
+            if !group
+                .round
+                .queue
+                .iter()
+                .any(|speaker| speaker.agent_id == agent_id)
+            {
+                continue;
+            }
+            group.round.remove(agent_id);
+            self.advance(&mut group)?;
+        }
+        Ok(())
+    }
+
     pub fn delete(&self, group_id: Uuid) -> AppResult<()> {
         self.stop(group_id)?;
         let _rounds = self.lock_rounds()?;

@@ -2,6 +2,8 @@ import type { ActivityEvent, Agent, RuntimeEvent } from "@/types/domain";
 
 const fixedDetails: Record<string, string> = {
   "agent.created": "Agent created",
+  "agent.deleted": "Agent deleted",
+  "agent.conversation_cleared": "Conversation cleared",
   "agent.session_reset": "New session started",
   "agent.started": "Started working",
   "agent.completed": "Finished the turn",
@@ -33,6 +35,7 @@ const taskDetails: Record<string, string> = {
 const groupDetails: Record<string, string> = {
   "group.created": "Group created",
   "group.deleted": "Group deleted",
+  "group.cleared": "Group conversation cleared",
   "group.message_created": "Posted in a group",
   "group.turn_queued": "Queued to answer in a group",
   "group.round_completed": "Group finished answering"

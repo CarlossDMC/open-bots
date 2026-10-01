@@ -46,6 +46,21 @@ pub fn update_agent_model(
 }
 
 #[tauri::command]
+pub fn delete_agent(agent_id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
+    state.agents.delete(agent_id)
+}
+
+#[tauri::command]
+pub fn clear_conversation(agent_id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
+    state.conversations.clear(agent_id)
+}
+
+#[tauri::command]
+pub fn clear_group(group_id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
+    state.groups.clear(group_id)
+}
+
+#[tauri::command]
 pub fn update_agent_access(
     agent_id: Uuid,
     workspace_write: bool,

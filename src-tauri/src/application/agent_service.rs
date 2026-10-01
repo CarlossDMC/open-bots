@@ -6,7 +6,7 @@ use uuid::Uuid;
 use super::provider_service::require;
 use crate::{
     domain::{
-        agents::{Agent, McpServerSelection, ModelSelection, NewAgent},
+        agents::{Agent, AgentStatus, McpServerSelection, ModelSelection, NewAgent},
         events::{DomainEvent, EventType},
     },
     error::{AppError, AppResult},
@@ -121,6 +121,31 @@ impl AgentService {
     }
 
     /// Applies from the agent's next turn; the provider session is kept.
+    /// Deletes the agent and everything that belongs to it. A working agent must be stopped
+    /// first.
+    pub fn delete(&self, agent_id: Uuid) -> AppResult<()> {
+        let agent = self
+            .agents
+            .find(agent_id)?
+            .ok_or_else(|| AppError::NotFound(format!("agent {agent_id}")))?;
+        if agent.status == AgentStatus::Working {
+            return Err(AppError::Validation(format!(
+                "{} is working; stop the turn before deleting it",
+                agent.name
+            )));
+        }
+        self.agents.delete(agent_id)?;
+        let event = DomainEvent::new(
+            EventType::AgentDeleted,
+            Some(agent_id),
+            json!({ "agentId": agent_id, "name": agent.name }),
+        );
+        self.events.append(&event)?;
+        self.event_bus.publish(event);
+        tracing::info!(agent_id = %agent_id, "agent deleted");
+        Ok(())
+    }
+
     /// Turns the agent's workspace writes and internet access on or off. Changes apply from
     /// its next turn.
     pub fn update_access(

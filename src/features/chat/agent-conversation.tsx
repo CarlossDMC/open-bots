@@ -1,6 +1,7 @@
 import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import {
   ArrowUp,
+  Eraser,
   Info,
   Loader2,
   MessageSquare,
@@ -8,7 +9,8 @@ import {
   RotateCcw,
   Sparkles,
   Square,
-  Terminal
+  Terminal,
+  Trash2
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { AgentAvatar } from "@/features/agents/agent-avatar";
@@ -37,20 +39,26 @@ import {
 import { cn, formatConversationTime } from "@/lib/utils";
 import type { Agent, ConversationMessage, ProviderSummary } from "@/types/domain";
 
+/** A header action that asks for confirmation inline before it runs. */
+type ConfirmedAction = "reset" | "clear" | "delete";
+
 export function AgentConversation({
   agent,
   agents = [],
   provider,
-  onAgentUpdated
+  onAgentUpdated,
+  onDelete
 }: {
   agent: Agent;
   agents?: Agent[];
   provider?: ProviderSummary;
   onAgentUpdated?: (agent: Agent) => void;
+  /** Deletes the agent; resolves to whether it was deleted. */
+  onDelete?: (agent: Agent) => Promise<boolean>;
 }) {
   const [showDetails, setShowDetails] = useState(false);
-  const [confirmingReset, setConfirmingReset] = useState(false);
-  const [resetting, setResetting] = useState(false);
+  const [confirming, setConfirming] = useState<ConfirmedAction>();
+  const [busy, setBusy] = useState(false);
   const conversation = useConversation(agent.id);
   const working = agent.status === "working";
   const unavailableReason = messagingUnavailableReason(provider);
@@ -75,11 +83,49 @@ export function AgentConversation({
     reduceMotion
   ]);
 
-  async function resetSession() {
-    setResetting(true);
-    if (await conversation.resetSession()) setConfirmingReset(false);
-    setResetting(false);
+  const actions: Record<
+    ConfirmedAction,
+    {
+      prompt: string;
+      label: string;
+      icon: typeof RotateCcw;
+      variant: "secondary" | "danger";
+      run: () => Promise<boolean>;
+    }
+  > = {
+    reset: {
+      prompt: "Clear the agent's context?",
+      label: "New session",
+      icon: RotateCcw,
+      variant: "secondary",
+      run: conversation.resetSession
+    },
+    clear: {
+      prompt: "Delete every message in this conversation?",
+      label: "Clear",
+      icon: Eraser,
+      variant: "danger",
+      run: conversation.clear
+    },
+    delete: {
+      prompt: `Delete ${agent.name} and its history?`,
+      label: "Delete",
+      icon: Trash2,
+      variant: "danger",
+      run: () => onDelete?.(agent) ?? Promise.resolve(false)
+    }
+  };
+
+  async function runConfirmed(action: ConfirmedAction) {
+    setBusy(true);
+    const done = await actions[action].run();
+    setBusy(false);
+    if (done) setConfirming(undefined);
   }
+
+  const headerButton =
+    "grid size-8 place-items-center rounded-md text-foreground-subtle transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent";
+  const blocked = working || Boolean(unavailableReason);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -118,43 +164,62 @@ export function AgentConversation({
           </div>
         </div>
         <div className="ml-auto flex items-center gap-1">
-          {confirmingReset ? (
-            <>
-              <span className="mr-1 text-xs text-foreground-subtle">
-                Clear the agent's context?
-              </span>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={resetting || working}
-                onClick={() => void resetSession()}
-              >
-                {resetting ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <RotateCcw size={13} />
-                )}
-                New session
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirmingReset(false)}>
-                Cancel
-              </Button>
-            </>
+          {confirming ? (
+            <ConfirmPrompt
+              prompt={actions[confirming].prompt}
+              label={actions[confirming].label}
+              icon={actions[confirming].icon}
+              variant={actions[confirming].variant}
+              busy={busy}
+              disabled={working}
+              onConfirm={() => void runConfirmed(confirming)}
+              onCancel={() => setConfirming(undefined)}
+            />
           ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmingReset(true)}
-              disabled={working || Boolean(unavailableReason)}
-              aria-label="Start a new session"
-              title={
-                working
-                  ? "A new session can start once the current turn ends"
-                  : "New session: the next message starts without earlier context"
-              }
-              className="grid size-8 place-items-center rounded-md text-foreground-subtle transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
-            >
-              <RotateCcw size={15} strokeWidth={1.8} />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirming("reset")}
+                disabled={blocked}
+                aria-label="Start a new session"
+                title={
+                  working
+                    ? "A new session can start once the current turn ends"
+                    : "New session: the next message starts without earlier context"
+                }
+                className={headerButton}
+              >
+                <RotateCcw size={15} strokeWidth={1.8} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirming("clear")}
+                disabled={blocked}
+                aria-label="Clear conversation"
+                title={
+                  working
+                    ? "The conversation can be cleared once the current turn ends"
+                    : "Clear conversation: delete every message and start over"
+                }
+                className={headerButton}
+              >
+                <Eraser size={15} strokeWidth={1.8} />
+              </button>
+              {onDelete ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirming("delete")}
+                  disabled={blocked}
+                  aria-label="Delete agent"
+                  title={
+                    working ? "The agent can be deleted once the current turn ends" : "Delete agent"
+                  }
+                  className={headerButton}
+                >
+                  <Trash2 size={15} strokeWidth={1.8} />
+                </button>
+              ) : null}
+            </>
           )}
           <button
             type="button"
@@ -359,6 +424,40 @@ function MessageEntry({
 function incomingAgentMessageBody(content: string): string {
   const separator = content.indexOf("\n\n");
   return separator >= 0 ? content.slice(separator + 2) : content;
+}
+
+/** Inline confirmation for a header action, shown in place of the header buttons. */
+export function ConfirmPrompt({
+  prompt,
+  label,
+  icon: Icon,
+  variant,
+  busy,
+  disabled = false,
+  onConfirm,
+  onCancel
+}: {
+  prompt: string;
+  label: string;
+  icon: typeof RotateCcw;
+  variant: "secondary" | "danger";
+  busy: boolean;
+  disabled?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <span className="mr-1 text-xs text-foreground-subtle">{prompt}</span>
+      <Button size="sm" variant={variant} disabled={busy || disabled} onClick={onConfirm}>
+        {busy ? <Loader2 size={13} className="animate-spin" /> : <Icon size={13} />}
+        {label}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={onCancel}>
+        Cancel
+      </Button>
+    </>
+  );
 }
 
 export function TimelineEntry({

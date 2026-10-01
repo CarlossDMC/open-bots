@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRuntimeEvents } from "@/hooks/use-runtime-events";
-import { listGroupMessages, sendGroupMessage, stopGroup } from "@/lib/desktop-api";
+import { clearGroup, listGroupMessages, sendGroupMessage, stopGroup } from "@/lib/desktop-api";
 import { describeError } from "@/lib/utils";
 import type { GroupMessage, RuntimeEvent } from "@/types/domain";
 
@@ -12,6 +12,8 @@ export interface GroupConversation {
   currentAction?: string;
   send: (content: string) => Promise<boolean>;
   stop: () => Promise<void>;
+  /** Deletes every message; resolves to false and sets `error` on failure. */
+  clear: () => Promise<boolean>;
 }
 
 const turnEndEvents = new Set(["agent.completed", "agent.failed", "agent.cancelled"]);
@@ -41,7 +43,8 @@ export function useGroupConversation(groupId: string): GroupConversation {
 
   useRuntimeEvents((event: RuntimeEvent) => {
     if (event.payload.groupId !== groupId) return;
-    if (event.eventType === "group.message_created") void reload();
+    if (event.eventType === "group.message_created" || event.eventType === "group.cleared")
+      void reload();
     else if (event.eventType === "tool.started" && typeof event.payload.detail === "string") {
       setCurrentAction(event.payload.detail);
     } else if (event.eventType === "tool.completed" || event.eventType === "tool.failed") {
@@ -74,5 +77,17 @@ export function useGroupConversation(groupId: string): GroupConversation {
     }
   }, [groupId]);
 
-  return { messages, loading, error, currentAction, send, stop };
+  const clear = useCallback(async () => {
+    try {
+      await clearGroup(groupId);
+      setMessages([]);
+      setError(undefined);
+      return true;
+    } catch (caught) {
+      setError(describeError(caught, "The group could not be cleared."));
+      return false;
+    }
+  }, [groupId]);
+
+  return { messages, loading, error, currentAction, send, stop, clear };
 }

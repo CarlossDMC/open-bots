@@ -29,6 +29,11 @@ pub trait ConversationRepository: Send + Sync {
         scope: ConversationScope,
         session_id: &str,
     ) -> AppResult<()>;
+    /// Deletes the agent's direct conversation and its provider sessions there; group
+    /// conversations are kept.
+    fn clear_direct_conversation(&self, agent_id: Uuid) -> AppResult<()>;
+    /// Forgets every member's provider session in the group; returns how many were removed.
+    fn clear_group_sessions(&self, group_id: Uuid) -> AppResult<usize>;
     /// Forgets every provider session of the agent, in every conversation; returns how many
     /// were removed.
     fn clear_provider_sessions(&self, agent_id: Uuid) -> AppResult<usize>;
@@ -121,6 +126,31 @@ impl ConversationRepository for SqliteConversationRepository {
                 ],
             )?;
             Ok(())
+        })
+    }
+
+    fn clear_direct_conversation(&self, agent_id: Uuid) -> AppResult<()> {
+        self.database.with_connection(|connection| {
+            let transaction = connection.unchecked_transaction()?;
+            transaction.execute(
+                "DELETE FROM conversation_messages WHERE agent_id = ?1",
+                [agent_id.to_string()],
+            )?;
+            transaction.execute(
+                "DELETE FROM provider_sessions WHERE agent_id = ?1 AND conversation_id = ''",
+                [agent_id.to_string()],
+            )?;
+            transaction.commit()?;
+            Ok(())
+        })
+    }
+
+    fn clear_group_sessions(&self, group_id: Uuid) -> AppResult<usize> {
+        self.database.with_connection(|connection| {
+            Ok(connection.execute(
+                "DELETE FROM provider_sessions WHERE conversation_id = ?1",
+                [group_id.to_string()],
+            )?)
         })
     }
 
@@ -223,6 +253,45 @@ mod tests {
         assert_eq!(
             repository.list_messages(agent.id, 2).expect("list"),
             vec![second, third]
+        );
+    }
+
+    #[test]
+    fn clears_one_conversation_and_keeps_the_others() {
+        let (repository, agent) = setup();
+        let group = Uuid::new_v4();
+        repository
+            .append_message(&message(&agent, MessageRole::User, "hi"))
+            .expect("append");
+        repository
+            .save_provider_session(agent.id, "codex", ConversationScope::Direct, "direct")
+            .expect("save");
+        repository
+            .save_provider_session(agent.id, "codex", ConversationScope::Group(group), "group")
+            .expect("save");
+
+        repository
+            .clear_direct_conversation(agent.id)
+            .expect("clear direct");
+        assert!(repository
+            .list_messages(agent.id, 10)
+            .expect("list")
+            .is_empty());
+        assert_eq!(
+            repository
+                .provider_session(agent.id, "codex", ConversationScope::Direct)
+                .expect("direct"),
+            None
+        );
+        assert_eq!(
+            repository
+                .provider_session(agent.id, "codex", ConversationScope::Group(group))
+                .expect("group"),
+            Some("group".into())
+        );
+        assert_eq!(
+            repository.clear_group_sessions(group).expect("clear group"),
+            1
         );
     }
 

@@ -7,11 +7,11 @@ use std::{
 use async_trait::async_trait;
 use open_bots_lib::{
     application::{
-        run_agent_runtime, AgentRuntime, ConversationService, GroupService, RuntimeSettings,
-        SettingsService,
+        run_agent_runtime, AgentRuntime, AgentService, ConversationService, GroupService,
+        RuntimeSettings, SettingsService,
     },
     domain::{
-        agents::{Agent, IdentityColor, NewAgent},
+        agents::{Agent, AgentStatus, IdentityColor, NewAgent},
         conversations::ConversationScope,
         events::{DomainEvent, EventType},
         groups::{Group, GroupAuthor, NewGroup},
@@ -108,6 +108,8 @@ struct TestHarness {
     nova: Agent,
     orion: Agent,
     groups: Arc<GroupService>,
+    agents: AgentService,
+    agent_repository: Arc<SqliteAgentRepository>,
     conversations: Arc<ConversationService>,
     sessions: Arc<SqliteConversationRepository>,
     settings: Arc<SettingsService>,
@@ -147,6 +149,7 @@ impl TestHarness {
         let provider = Arc::new(ScriptedProvider::default());
         let mut registry = ProviderRegistry::new();
         registry.register(provider.clone()).expect("register");
+        let providers = Arc::new(registry);
         let sessions = Arc::new(SqliteConversationRepository::new(Arc::clone(&database)));
         let group_repository = Arc::new(SqliteGroupRepository::new(Arc::clone(&database)));
         let conversations = Arc::new(
@@ -154,7 +157,7 @@ impl TestHarness {
                 agents.clone(),
                 sessions.clone(),
                 Arc::new(SqliteMemoryRepository::new(Arc::clone(&database))),
-                Arc::new(registry),
+                Arc::clone(&providers),
                 events.clone(),
                 event_bus.clone(),
             )
@@ -178,13 +181,19 @@ impl TestHarness {
                 agents.clone(),
                 Arc::new(SqliteRoutineRepository::new(Arc::clone(&database))),
                 Arc::new(SqliteTaskRepository::new(Arc::clone(&database))),
-                Arc::new(SqliteApprovalRepository::new(database)),
+                Arc::new(SqliteApprovalRepository::new(Arc::clone(&database))),
                 Arc::clone(&settings),
                 Arc::clone(&conversations),
                 events,
                 event_bus.clone(),
             )
             .with_groups(Arc::clone(&groups)),
+        );
+        let agent_service = AgentService::new(
+            agents.clone(),
+            Arc::new(SqliteEventRepository::new(Arc::clone(&database))),
+            event_bus.clone(),
+            providers,
         );
         let subscriber = event_bus.subscribe();
         tokio::spawn(run_agent_runtime(runtime, event_bus.subscribe()));
@@ -194,6 +203,8 @@ impl TestHarness {
             nova,
             orion,
             groups,
+            agents: agent_service,
+            agent_repository: agents,
             conversations,
             sessions,
             settings,
@@ -427,4 +438,125 @@ async fn each_group_keeps_its_own_provider_session() {
     let prompts = harness.prompts_for(&harness.atlas);
     assert!(prompts[1].starts_with("<agent_context>"));
     assert!(!prompts[1].contains("<group>"));
+}
+
+#[tokio::test]
+async fn deleting_the_member_due_to_answer_lets_the_next_one_answer() {
+    let mut harness = TestHarness::new();
+    let group = harness.group(&[&harness.atlas, &harness.nova]);
+    // A paused member keeps its wake queued, so it is still due to answer when deleted.
+    let mut atlas = harness.atlas.clone();
+    atlas.transition_to(AgentStatus::Paused).expect("pause");
+    harness.agent_repository.save(&atlas).expect("save");
+
+    harness
+        .groups
+        .post_user_message(group.id, "Status?")
+        .expect("post");
+    harness.agents.delete(atlas.id).expect("delete");
+    harness.next(EventType::GroupRoundCompleted, group.id).await;
+
+    assert_eq!(
+        harness.transcript(&group),
+        vec![
+            (GroupAuthor::User, "Status?".into()),
+            (by(&harness.nova), "Reply from /work/Nova.".into()),
+        ]
+    );
+    assert_eq!(
+        harness.groups.find(group.id).expect("group").member_ids,
+        vec![harness.nova.id]
+    );
+    assert!(harness.prompts_for(&harness.atlas).is_empty());
+}
+
+#[tokio::test]
+async fn clearing_a_group_keeps_it_and_starts_its_sessions_over() {
+    let mut harness = TestHarness::new();
+    let group = harness.group(&[&harness.atlas]);
+    harness
+        .groups
+        .post_user_message(group.id, "Kickoff")
+        .expect("post");
+    harness.next(EventType::GroupRoundCompleted, group.id).await;
+
+    harness.groups.clear(group.id).expect("clear");
+
+    assert!(harness.transcript(&group).is_empty());
+    assert_eq!(
+        harness
+            .sessions
+            .provider_session(
+                harness.atlas.id,
+                "scripted",
+                ConversationScope::Group(group.id)
+            )
+            .expect("session"),
+        None
+    );
+    harness
+        .groups
+        .post_user_message(group.id, "Fresh start")
+        .expect("post");
+    harness.next(EventType::GroupRoundCompleted, group.id).await;
+    let prompts = harness.prompts_for(&harness.atlas);
+    assert!(prompts[1].contains("<group>"), "{}", prompts[1]);
+    assert!(!prompts[1].contains("Kickoff"));
+}
+
+#[tokio::test]
+async fn groups_and_conversations_cannot_be_cleared_mid_turn() {
+    let mut harness = TestHarness::new();
+    let group = harness.group(&[&harness.atlas]);
+    harness.script(&harness.atlas, HANG);
+    harness
+        .groups
+        .post_user_message(group.id, "Status?")
+        .expect("post");
+    harness
+        .next(EventType::AgentStarted, harness.atlas.id)
+        .await;
+
+    assert!(harness.groups.clear(group.id).is_err());
+    assert!(harness.conversations.clear(harness.atlas.id).is_err());
+    assert!(harness.agents.delete(harness.atlas.id).is_err());
+    harness.groups.stop(group.id).expect("stop");
+}
+
+#[tokio::test]
+async fn clearing_a_direct_conversation_keeps_group_sessions() {
+    let mut harness = TestHarness::new();
+    let group = harness.group(&[&harness.atlas]);
+    harness
+        .groups
+        .post_user_message(group.id, "Kickoff")
+        .expect("post");
+    harness.next(EventType::GroupRoundCompleted, group.id).await;
+    harness
+        .conversations
+        .send(harness.atlas.id, "Hello")
+        .expect("send");
+    harness
+        .next(EventType::AgentCompleted, harness.atlas.id)
+        .await;
+
+    harness
+        .conversations
+        .clear(harness.atlas.id)
+        .expect("clear");
+
+    assert!(harness
+        .conversations
+        .list(harness.atlas.id)
+        .expect("direct")
+        .is_empty());
+    let session = |scope| {
+        harness
+            .sessions
+            .provider_session(harness.atlas.id, "scripted", scope)
+            .expect("session")
+    };
+    assert_eq!(session(ConversationScope::Direct), None);
+    assert!(session(ConversationScope::Group(group.id)).is_some());
+    assert_eq!(harness.transcript(&group).len(), 2);
 }

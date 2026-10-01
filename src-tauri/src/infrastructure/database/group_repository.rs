@@ -23,6 +23,8 @@ pub trait GroupRepository: Send + Sync {
     fn list(&self) -> AppResult<Vec<Group>>;
     /// Deletes the group and its messages; returns whether it existed.
     fn delete(&self, id: Uuid) -> AppResult<bool>;
+    /// Deletes every message in the group.
+    fn clear_messages(&self, group_id: Uuid) -> AppResult<()>;
     /// Appends a message and marks the group as active at its time.
     fn append_message(&self, message: &GroupMessage) -> AppResult<()>;
     /// The most recent `limit` messages, oldest first.
@@ -109,6 +111,16 @@ impl GroupRepository for SqliteGroupRepository {
     fn delete(&self, id: Uuid) -> AppResult<bool> {
         self.database.with_connection(|connection| {
             Ok(connection.execute("DELETE FROM agent_groups WHERE id = ?1", [id.to_string()])? > 0)
+        })
+    }
+
+    fn clear_messages(&self, group_id: Uuid) -> AppResult<()> {
+        self.database.with_connection(|connection| {
+            connection.execute(
+                "DELETE FROM group_messages WHERE group_id = ?1",
+                [group_id.to_string()],
+            )?;
+            Ok(())
         })
     }
 
@@ -343,5 +355,12 @@ mod tests {
             repository.list_messages(group.id, 2).expect("list"),
             vec![review, notice]
         );
+
+        repository.clear_messages(group.id).expect("clear");
+        assert!(repository
+            .list_messages(group.id, 10)
+            .expect("list")
+            .is_empty());
+        assert!(repository.find(group.id).expect("find").is_some());
     }
 }

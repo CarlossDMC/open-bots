@@ -31,7 +31,8 @@ export function useGroups(): Groups {
   }, [reload]);
 
   useRuntimeEvents((event) => {
-    if (event.eventType.startsWith("group.")) void reload();
+    // Deleting an agent also removes it from its groups.
+    if (event.eventType.startsWith("group.") || event.eventType === "agent.deleted") void reload();
   });
 
   const create = useCallback(async (input: NewGroupInput) => {

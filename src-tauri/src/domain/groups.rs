@@ -90,6 +90,17 @@ impl GroupRound {
         self.queue.clear();
         self.active_wake_id = None;
     }
+
+    /// Drops a member that left, e.g. because it was deleted. Returns whether it was the
+    /// current speaker, whose wake is then no longer queued.
+    pub fn remove(&mut self, agent_id: Uuid) -> bool {
+        let was_current = self.current().map(|speaker| speaker.agent_id) == Some(agent_id);
+        self.queue.retain(|speaker| speaker.agent_id != agent_id);
+        if was_current {
+            self.active_wake_id = None;
+        }
+        was_current
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -312,6 +323,19 @@ mod tests {
         assert_eq!(round.current().map(|s| s.agent_id), Some(b));
         round.clear();
         assert!(!round.is_active());
+    }
+
+    #[test]
+    fn removing_the_current_speaker_frees_the_round_for_the_next_one() {
+        let (a, b, c) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let mut round = GroupRound::default();
+        round.enqueue(&[a, b, c], 0);
+        round.active_wake_id = Some(Uuid::new_v4());
+        assert!(!round.remove(c));
+        assert!(round.active_wake_id.is_some());
+        assert!(round.remove(a));
+        assert_eq!(round.active_wake_id, None);
+        assert_eq!(round.current().map(|s| s.agent_id), Some(b));
     }
 
     #[test]

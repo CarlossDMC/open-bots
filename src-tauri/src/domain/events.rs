@@ -19,6 +19,11 @@ pub enum EventType {
     AgentCreated,
     #[serde(rename = "agent.updated")]
     AgentUpdated,
+    #[serde(rename = "agent.deleted")]
+    AgentDeleted,
+    /// The agent's direct conversation was emptied and its session there forgotten.
+    #[serde(rename = "agent.conversation_cleared")]
+    AgentConversationCleared,
     #[serde(rename = "agent.session_reset")]
     AgentSessionReset,
     #[serde(rename = "agent.started")]
@@ -44,6 +49,9 @@ pub enum EventType {
     GroupCreated,
     #[serde(rename = "group.deleted")]
     GroupDeleted,
+    /// The group's messages were deleted and its members' sessions there forgotten.
+    #[serde(rename = "group.cleared")]
+    GroupCleared,
     #[serde(rename = "group.message_created")]
     GroupMessageCreated,
     /// A member was queued to answer in a group; the runtime starts it when the member is free.

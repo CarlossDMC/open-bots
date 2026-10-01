@@ -86,6 +86,12 @@ impl AgentRuntime {
                     self.drain(agent_id)?;
                 }
             }
+            // A deleted agent's wakes are gone with it; its groups move on without it.
+            EventType::AgentDeleted => {
+                if let (Some(groups), Some(agent_id)) = (&self.groups, event.aggregate_id) {
+                    groups.forget_agent(agent_id)?;
+                }
+            }
             // Messaging and groups queue the wake themselves; the event says there is one
             // to run.
             EventType::AgentMessage | EventType::GroupTurnQueued => {

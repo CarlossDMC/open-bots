@@ -102,6 +102,12 @@ export async function updateAgentModel(
 }
 
 /** Replaces the agent's configured MCP servers. Applies from the agent's next turn. */
+/** Deletes the agent with its conversation, memories, routines, and group memberships. */
+export async function deleteAgent(agentId: string): Promise<void> {
+  if (!isTauriRuntime()) throw new Error("Deleting agents requires the desktop runtime.");
+  await invoke("delete_agent", { agentId });
+}
+
 /** Turns workspace writes and internet access on or off from the agent's next turn. */
 export async function updateAgentAccess(
   agent: Agent,
@@ -289,6 +295,12 @@ export async function cancelTurn(agentId: string): Promise<void> {
   await invoke("cancel_turn", { agentId });
 }
 
+/** Deletes every message in the agent's own conversation and starts its next turn fresh. */
+export async function clearConversation(agentId: string): Promise<void> {
+  if (!isTauriRuntime()) throw new Error(messagingUnavailableMessage);
+  await invoke("clear_conversation", { agentId });
+}
+
 /** Starts a fresh provider session on the agent's next turn; the conversation stays visible. */
 export async function resetAgentSession(agentId: string): Promise<void> {
   if (!isTauriRuntime()) throw new Error(messagingUnavailableMessage);
@@ -311,6 +323,12 @@ export async function createGroup(input: NewGroupInput): Promise<Group> {
 export async function deleteGroup(groupId: string): Promise<void> {
   if (!isTauriRuntime()) throw new Error(groupsUnavailableMessage);
   await invoke("delete_group", { groupId });
+}
+
+/** Deletes the group's messages and starts its members' sessions there over. */
+export async function clearGroup(groupId: string): Promise<void> {
+  if (!isTauriRuntime()) throw new Error(groupsUnavailableMessage);
+  await invoke("clear_group", { groupId });
 }
 
 export async function listGroupMessages(groupId: string): Promise<GroupMessage[]> {

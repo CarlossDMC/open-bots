@@ -20,6 +20,7 @@ import { mergeRuntimeEvent, toActivityEvent } from "@/lib/activity";
 import { describeError } from "@/lib/utils";
 import {
   createAgent,
+  deleteAgent,
   listAgents,
   listApprovals,
   listEvents,
@@ -165,6 +166,24 @@ export function App() {
     if (group) selectGroup(group);
     return Boolean(group);
   }
+  async function handleDeleteAgent(agent: Agent) {
+    try {
+      await deleteAgent(agent.id);
+    } catch (caught) {
+      setError(describeError(caught, "The agent could not be deleted."));
+      return false;
+    }
+    const remaining = agents.filter((candidate) => candidate.id !== agent.id);
+    setAgents(remaining);
+    setSelection((current) =>
+      current?.kind === "agent" && current.id === agent.id
+        ? remaining[0]
+          ? { kind: "agent", id: remaining[0].id }
+          : undefined
+        : current
+    );
+    return true;
+  }
   async function handleDeleteGroup(group: Group) {
     const deleted = await groups.remove(group.id);
     if (deleted) {
@@ -261,6 +280,7 @@ export function App() {
             agents={agents}
             provider={providers.find((provider) => provider.id === selectedAgent.providerId)}
             onAgentUpdated={replaceAgent}
+            onDelete={handleDeleteAgent}
           />
         ) : (
           <NoConversation onCreate={() => setCreateOpen(true)} />

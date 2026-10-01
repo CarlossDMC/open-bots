@@ -57,7 +57,8 @@ describe("GroupConversation", () => {
       ],
       loading: false,
       send: vi.fn().mockResolvedValue(true),
-      stop
+      stop,
+      clear: vi.fn().mockResolvedValue(true)
     });
   });
 
@@ -127,7 +128,8 @@ describe("GroupConversation", () => {
       ],
       loading: false,
       send: vi.fn().mockResolvedValue(true),
-      stop
+      stop,
+      clear: vi.fn().mockResolvedValue(true)
     });
     const onOpenAgent = vi.fn();
     render(
@@ -141,5 +143,33 @@ describe("GroupConversation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: `@${nova.name}` }));
     expect(onOpenAgent).toHaveBeenCalledWith(nova);
+  });
+
+  it("clears the group only after confirmation and not while members answer", async () => {
+    const clear = vi.fn().mockResolvedValue(true);
+    vi.mocked(useGroupConversation).mockReturnValue({
+      messages: [],
+      loading: false,
+      send: vi.fn().mockResolvedValue(true),
+      stop,
+      clear
+    });
+    const { rerender } = render(
+      <GroupConversation
+        group={group({ round: { queue: [{ agentId: atlas.id, chainDepth: 0 }] } })}
+        agents={demoAgents}
+        onDelete={vi.fn()}
+      />
+    );
+    expect(
+      screen.getByRole("button", { name: "Clear group conversation" }).hasAttribute("disabled")
+    ).toBe(true);
+
+    rerender(<GroupConversation group={group()} agents={demoAgents} onDelete={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Clear group conversation" }));
+    expect(clear).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    await waitFor(() => expect(clear).toHaveBeenCalledOnce());
   });
 });

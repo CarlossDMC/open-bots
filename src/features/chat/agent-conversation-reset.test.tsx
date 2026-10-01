@@ -24,14 +24,15 @@ const provider: ProviderSummary = {
   capabilities: []
 };
 
-function mockConversation() {
+function mockConversation(clear = vi.fn().mockResolvedValue(true)) {
   const resetSession = vi.fn().mockResolvedValue(true);
   vi.mocked(useConversation).mockReturnValue({
     messages: [],
     loading: false,
     send: vi.fn().mockResolvedValue(false),
     cancel: vi.fn().mockResolvedValue(undefined),
-    resetSession
+    resetSession,
+    clear
   });
   return resetSession;
 }
@@ -59,5 +60,32 @@ describe("AgentConversation session reset", () => {
     expect(
       screen.getByRole<HTMLButtonElement>("button", { name: "Start a new session" }).disabled
     ).toBe(true);
+  });
+
+  it("asks for confirmation before clearing the conversation", async () => {
+    const clear = vi.fn().mockResolvedValue(true);
+    mockConversation(clear);
+    render(<AgentConversation agent={{ ...demoAgents[0], status: "idle" }} provider={provider} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear conversation" }));
+    expect(clear).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    await waitFor(() => expect(clear).toHaveBeenCalledOnce());
+  });
+
+  it("deletes the agent only after confirmation and only when offered", async () => {
+    mockConversation();
+    const agent = { ...demoAgents[0], status: "idle" as const };
+    const { rerender } = render(<AgentConversation agent={agent} provider={provider} />);
+    expect(screen.queryByRole("button", { name: "Delete agent" })).toBeNull();
+
+    const onDelete = vi.fn().mockResolvedValue(true);
+    rerender(<AgentConversation agent={agent} provider={provider} onDelete={onDelete} />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete agent" }));
+    expect(screen.getByText(`Delete ${agent.name} and its history?`)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith(agent));
   });
 });

@@ -14,6 +14,10 @@ pub trait AgentRepository: Send + Sync {
     fn list(&self) -> AppResult<Vec<Agent>>;
     fn find(&self, id: Uuid) -> AppResult<Option<Agent>>;
     fn save(&self, agent: &Agent) -> AppResult<()>;
+    /// Deletes the agent with its conversation, sessions, wakes, memories, routines,
+    /// approvals, and group memberships; tasks keep their history without the agent.
+    /// Returns whether it existed.
+    fn delete(&self, id: Uuid) -> AppResult<bool>;
 }
 
 pub struct SqliteAgentRepository {
@@ -47,6 +51,12 @@ impl AgentRepository for SqliteAgentRepository {
         self.database.with_connection(|connection| {
             connection.execute("INSERT INTO agents (id, name, role, description, provider_id, identity_color, avatar_variant, workspace, status, instructions, permissions_json, current_task, created_at, updated_at, model, reasoning_effort, mcp_servers_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) ON CONFLICT(id) DO UPDATE SET name=excluded.name, role=excluded.role, description=excluded.description, provider_id=excluded.provider_id, identity_color=excluded.identity_color, avatar_variant=excluded.avatar_variant, workspace=excluded.workspace, status=excluded.status, instructions=excluded.instructions, permissions_json=excluded.permissions_json, current_task=excluded.current_task, updated_at=excluded.updated_at, model=excluded.model, reasoning_effort=excluded.reasoning_effort, mcp_servers_json=excluded.mcp_servers_json", params![agent.id.to_string(), agent.name, agent.role, agent.description, agent.provider_id, enum_json(&agent.identity_color)?, agent.avatar_variant, agent.workspace, enum_json(&agent.status)?, agent.instructions, serde_json::to_string(&agent.permissions)?, agent.current_task, agent.created_at.to_rfc3339(), agent.updated_at.to_rfc3339(), agent.model_selection.model(), agent.model_selection.reasoning_effort(), serde_json::to_string(&agent.mcp_servers)?])?;
             Ok(())
+        })
+    }
+
+    fn delete(&self, id: Uuid) -> AppResult<bool> {
+        self.database.with_connection(|connection| {
+            Ok(connection.execute("DELETE FROM agents WHERE id = ?1", [id.to_string()])? > 0)
         })
     }
 }
@@ -129,6 +139,10 @@ mod tests {
             )
             .expect("change servers");
         repository.save(&updated).expect("update");
-        assert_eq!(repository.list().expect("list"), vec![updated]);
+        assert_eq!(repository.list().expect("list"), vec![updated.clone()]);
+
+        assert!(repository.delete(updated.id).expect("delete"));
+        assert!(!repository.delete(updated.id).expect("delete again"));
+        assert!(repository.list().expect("list").is_empty());
     }
 }

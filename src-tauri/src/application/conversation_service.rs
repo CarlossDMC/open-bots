@@ -337,6 +337,35 @@ impl ConversationService {
         Ok(())
     }
 
+    /// Empties the agent's direct conversation and forgets its session there, so the next
+    /// message starts fresh. Group conversations are kept.
+    pub fn clear(&self, agent_id: Uuid) -> AppResult<()> {
+        let agent = self.find_agent(agent_id)?;
+        {
+            // Holding the lock keeps a turn from starting, or saving its session, meanwhile.
+            let running = self.lock_running()?;
+            if running.contains_key(&agent_id) {
+                return Err(AppError::Validation(format!(
+                    "{} is working; stop the turn before clearing the conversation",
+                    agent.name
+                )));
+            }
+            self.conversations.clear_direct_conversation(agent_id)?;
+        }
+        self.publish(
+            EventType::AgentConversationCleared,
+            agent_id,
+            json!({ "agentId": agent_id, "name": agent.name }),
+        )?;
+        tracing::info!(agent_id = %agent_id, "conversation cleared");
+        Ok(())
+    }
+
+    /// Forgets every member's provider session in the group.
+    pub fn forget_group_sessions(&self, group_id: Uuid) -> AppResult<usize> {
+        self.conversations.clear_group_sessions(group_id)
+    }
+
     /// Stops the agent's running turn. The turn then finishes as cancelled.
     pub fn cancel(&self, agent_id: Uuid) -> AppResult<()> {
         let running = self.lock_running()?;
