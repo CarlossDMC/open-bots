@@ -8,7 +8,7 @@ export function NotificationSettings({ notifications }: { notifications: Notific
     <div className="space-y-3">
       <label className="flex items-center justify-between border-b border-border-subtle py-2.5">
         <span className="text-xs text-foreground-subtle">
-          Approvals and routine triggers
+          Replies, failures, approvals, and routines
           <span className="block text-2xs text-foreground-faint">
             Shown while Open Bots is in the background
           </span>

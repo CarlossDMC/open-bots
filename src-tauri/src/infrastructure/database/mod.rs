@@ -1,5 +1,6 @@
 mod agent_repository;
 mod approval_repository;
+mod conversation_repository;
 mod event_repository;
 mod memory_repository;
 mod routine_repository;
@@ -12,15 +13,17 @@ use crate::error::{AppError, AppResult};
 
 pub use agent_repository::{AgentRepository, SqliteAgentRepository};
 pub use approval_repository::{ApprovalRepository, SqliteApprovalRepository};
+pub use conversation_repository::{ConversationRepository, SqliteConversationRepository};
 pub use event_repository::{EventRepository, SqliteEventRepository};
 pub use memory_repository::{MemoryRepository, SqliteMemoryRepository};
 pub use routine_repository::{RoutineRepository, SqliteRoutineRepository};
 
 /// Ordered schema migrations. Each entry runs once, when `user_version` is below its version.
-const MIGRATIONS: [(i64, &str); 3] = [
+const MIGRATIONS: [(i64, &str); 4] = [
     (1, include_str!("migrations/0001_initial.sql")),
     (2, include_str!("migrations/0002_agent_memories.sql")),
     (3, include_str!("migrations/0003_routines.sql")),
+    (4, include_str!("migrations/0004_conversations.sql")),
 ];
 
 pub struct Database {
@@ -89,7 +92,7 @@ mod tests {
         let database = Database::in_memory().expect("database");
         database
             .with_connection(|connection| {
-                assert_eq!(user_version(connection), 3);
+                assert_eq!(user_version(connection), 4);
                 Ok(())
             })
             .expect("connection");
@@ -109,9 +112,10 @@ mod tests {
         let database = Database::open(&path).expect("upgraded database");
         database
             .with_connection(|connection| {
-                assert_eq!(user_version(connection), 3);
+                assert_eq!(user_version(connection), 4);
                 connection.prepare("SELECT id FROM agent_memories LIMIT 0")?;
                 connection.prepare("SELECT id FROM routines LIMIT 0")?;
+                connection.prepare("SELECT id FROM conversation_messages LIMIT 0")?;
                 Ok(())
             })
             .expect("connection");

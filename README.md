@@ -137,14 +137,15 @@ Read the [architecture guide](docs/architecture.md) and [architecture decisions]
 | Persisted `agent.created` events        | Functional                       |
 | Activity timeline from persisted events | Functional; live via event bus   |
 | Approval persistence and decisions      | Functional; no agent raises them |
-| Per-agent memory notes                  | Stored; not sent to providers    |
+| Per-agent memory notes                  | Sent on a session's first turn   |
 | Scheduled routines (interval, daily)    | Triggers recorded; no execution  |
-| Desktop notifications                   | Approvals and routine triggers   |
+| Desktop notifications                   | Replies, approvals, routines     |
 | In-process event bus                    | Functional and tested            |
 | Provider registry                       | Functional                       |
 | Mock provider                           | Functional; makes no model calls |
 | Tasks UI                                | Demonstration data               |
-| Real provider execution                 | Not implemented                  |
+| OpenAI Codex CLI conversations          | Functional; resumes sessions     |
+| Workspace writes by agents              | Read-only until permissions UI   |
 | Persistent agent loop                   | Not implemented                  |
 | Agent collaboration and delegation      | Not implemented                  |
 | Background process execution            | Boundary only                    |
@@ -294,7 +295,7 @@ Losing the private key means existing installations can no longer verify new upd
 - [ ] Persistent agent execution loop
 - [x] Real activity timeline backed by persisted events
 - [ ] Task creation, assignment, and state transitions
-- [ ] Provider session lifecycle and resume
+- [x] Provider session lifecycle and resume
 - [ ] Background processes and completion events
 - [x] Persisted approvals and decisions
 - [ ] Tool permissions connected to approval requests
@@ -303,7 +304,8 @@ Losing the private key means existing installations can no longer verify new upd
 
 ### Expansion — later
 
-- [ ] Official CLI provider adapters
+- [x] OpenAI Codex CLI adapter
+- [ ] Claude Code and Gemini CLI adapters
 - [x] Scheduled routines and desktop notifications
 - [ ] Git worktrees
 - [ ] Remote workers and provider plugins

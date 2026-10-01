@@ -4,16 +4,22 @@ import { AgentAvatar } from "./agent-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { agentColors, type AgentColor, type NewAgentInput } from "@/types/domain";
+import {
+  agentColors,
+  type AgentColor,
+  type NewAgentInput,
+  type ProviderSummary
+} from "@/types/domain";
 
 interface NewAgentDialogProps {
   open: boolean;
   busy: boolean;
+  providers: ProviderSummary[];
   onClose: () => void;
   onSubmit: (input: NewAgentInput) => Promise<void>;
 }
 
-export function NewAgentDialog({ open, busy, onClose, onSubmit }: NewAgentDialogProps) {
+export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: NewAgentDialogProps) {
   const [color, setColor] = useState<AgentColor>("indigo");
   const [error, setError] = useState<string>();
   if (!open) return null;
@@ -51,7 +57,7 @@ export function NewAgentDialog({ open, busy, onClose, onSubmit }: NewAgentDialog
               Create agent
             </h2>
             <p className="mt-0.5 text-xs text-foreground-subtle">
-              Define a persistent identity. Runtime execution is not enabled yet.
+              Define a persistent identity backed by a local provider.
             </p>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
@@ -84,8 +90,21 @@ export function NewAgentDialog({ open, busy, onClose, onSubmit }: NewAgentDialog
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Provider">
-              <select name="providerId" className="field-select">
-                <option value="mock">Mock Provider</option>
+              <select
+                name="providerId"
+                className="field-select"
+                defaultValue={defaultProvider(providers)}
+              >
+                {providers.map((provider) => (
+                  <option
+                    key={provider.id}
+                    value={provider.id}
+                    disabled={provider.status === "not-installed"}
+                  >
+                    {provider.name}
+                    {provider.status === "available" ? "" : ` (${providerStatusLabel(provider)})`}
+                  </option>
+                ))}
               </select>
             </Field>
             <Field label="Workspace">
@@ -160,3 +179,15 @@ const swatches: Record<AgentColor, string> = {
   rose: "bg-identity-rose",
   violet: "bg-identity-violet"
 };
+
+/** Prefers an available real provider over the mock. */
+function defaultProvider(providers: ProviderSummary[]): string {
+  const real = providers.find(
+    (provider) => provider.kind !== "mock" && provider.status === "available"
+  );
+  return real?.id ?? providers[0]?.id ?? "mock";
+}
+
+function providerStatusLabel(provider: ProviderSummary): string {
+  return provider.status === "not-installed" ? "not installed" : "sign-in unconfirmed";
+}

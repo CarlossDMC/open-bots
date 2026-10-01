@@ -5,6 +5,7 @@ use crate::{
     domain::{
         agents::{Agent, NewAgent},
         approvals::{ApprovalRequest, ApprovalStatus},
+        conversations::ConversationMessage,
         events::DomainEvent,
         memories::AgentMemory,
         routines::{NewRoutine, Routine},
@@ -89,4 +90,27 @@ pub fn set_routine_enabled(
 #[tauri::command]
 pub fn delete_routine(id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
     state.routines.delete(id)
+}
+
+#[tauri::command]
+pub fn list_messages(
+    agent_id: Uuid,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<ConversationMessage>> {
+    state.conversations.list(agent_id)
+}
+
+/// Async so the background turn is spawned on the Tauri Tokio runtime.
+#[tauri::command]
+pub async fn send_message(
+    agent_id: Uuid,
+    content: String,
+    state: State<'_, AppState>,
+) -> AppResult<ConversationMessage> {
+    state.conversations.send(agent_id, &content)
+}
+
+#[tauri::command]
+pub fn cancel_turn(agent_id: Uuid, state: State<'_, AppState>) -> AppResult<()> {
+    state.conversations.cancel(agent_id)
 }

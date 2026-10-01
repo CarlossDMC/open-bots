@@ -10,14 +10,17 @@ pub mod tools;
 use std::sync::Arc;
 
 use application::{
-    run_routine_scheduler, ActivityService, AgentService, ApprovalService, MemoryService,
-    RoutineService,
+    run_routine_scheduler, ActivityService, AgentService, ApprovalService, ConversationService,
+    MemoryService, RoutineService,
 };
-use infrastructure::database::{
-    Database, SqliteAgentRepository, SqliteApprovalRepository, SqliteEventRepository,
-    SqliteMemoryRepository, SqliteRoutineRepository,
+use infrastructure::{
+    database::{
+        Database, SqliteAgentRepository, SqliteApprovalRepository, SqliteConversationRepository,
+        SqliteEventRepository, SqliteMemoryRepository, SqliteRoutineRepository,
+    },
+    process::TokioLineProcessRunner,
 };
-use providers::{MockProvider, ProviderRegistry};
+use providers::{CodexProvider, MockProvider, ProviderRegistry};
 use runtime::event_bus::EventBus;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;
@@ -32,6 +35,7 @@ pub struct AppState {
     memories: MemoryService,
     activity: ActivityService,
     routines: Arc<RoutineService>,
+    conversations: Arc<ConversationService>,
     providers: Arc<ProviderRegistry>,
 }
 
@@ -54,9 +58,14 @@ pub fn run() {
                 Arc::new(SqliteApprovalRepository::new(Arc::clone(&database)));
             let memory_repository = Arc::new(SqliteMemoryRepository::new(Arc::clone(&database)));
             let routine_repository = Arc::new(SqliteRoutineRepository::new(Arc::clone(&database)));
+            let conversation_repository =
+                Arc::new(SqliteConversationRepository::new(Arc::clone(&database)));
             let event_repository = Arc::new(SqliteEventRepository::new(database));
             let mut registry = ProviderRegistry::new();
             registry.register(Arc::new(MockProvider))?;
+            registry.register(Arc::new(CodexProvider::new(Arc::new(
+                TokioLineProcessRunner,
+            ))))?;
             let providers = Arc::new(registry);
             let event_bus = EventBus::new(128);
             forward_runtime_events(app.handle().clone(), &event_bus);
@@ -72,6 +81,17 @@ pub fn run() {
                 event_repository.clone(),
                 event_bus.clone(),
             );
+            let conversations = Arc::new(ConversationService::new(
+                agent_repository.clone(),
+                conversation_repository,
+                memory_repository.clone(),
+                Arc::clone(&providers),
+                event_repository.clone(),
+                event_bus.clone(),
+            ));
+            if let Err(error) = conversations.recover_interrupted() {
+                tracing::error!(%error, "interrupted turns could not be recovered");
+            }
             let memories = MemoryService::new(
                 memory_repository,
                 agent_repository.clone(),
@@ -92,6 +112,7 @@ pub fn run() {
                 memories,
                 activity,
                 routines,
+                conversations,
                 providers,
             });
             tracing::info!(storage = %data_directory.display(), "local runtime initialized");
@@ -110,7 +131,10 @@ pub fn run() {
             commands::list_routines,
             commands::create_routine,
             commands::set_routine_enabled,
-            commands::delete_routine
+            commands::delete_routine,
+            commands::list_messages,
+            commands::send_message,
+            commands::cancel_turn
         ])
         .run(tauri::generate_context!())
         .expect("Tauri application failed to start");

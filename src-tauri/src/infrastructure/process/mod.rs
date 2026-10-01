@@ -1,9 +1,13 @@
+mod line_process;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use uuid::Uuid;
 
 use crate::error::AppResult;
+
+pub use line_process::{LineCommand, LineProcessExit, LineProcessRunner, TokioLineProcessRunner};
 
 #[derive(Debug, Clone)]
 pub struct ProcessSpec {

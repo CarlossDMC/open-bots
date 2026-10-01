@@ -35,8 +35,26 @@ describe("notificationFor", () => {
     });
   });
 
+  it("reports finished and failed turns", () => {
+    expect(
+      notificationFor(
+        { ...runtimeEvent("agent.completed", {}), aggregateId: "demo-atlas" },
+        demoAgents
+      )
+    ).toEqual({ title: "Atlas", body: "Replied to your message" });
+    expect(
+      notificationFor(runtimeEvent("agent.failed", { detail: "usage limit" }), demoAgents)
+    ).toEqual({ title: "An agent", body: "usage limit" });
+  });
+
   it("stays quiet for informational events", () => {
-    for (const type of ["agent.created", "memory.added", "approval.approved", "routine.created"]) {
+    for (const type of [
+      "agent.created",
+      "agent.started",
+      "message.created",
+      "memory.added",
+      "routine.created"
+    ]) {
       expect(notificationFor(runtimeEvent(type, { agentId: "demo-atlas" }), demoAgents)).toBeNull();
     }
   });

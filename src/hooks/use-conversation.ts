@@ -1,0 +1,79 @@
+import { useCallback, useEffect, useState } from "react";
+import { useRuntimeEvents } from "@/hooks/use-runtime-events";
+import { cancelTurn, listMessages, sendMessage } from "@/lib/desktop-api";
+import { describeError } from "@/lib/utils";
+import type { ConversationMessage, RuntimeEvent } from "@/types/domain";
+
+export interface Conversation {
+  messages: ConversationMessage[];
+  loading: boolean;
+  error?: string;
+  /** The action the agent is running right now, from live `tool.*` events. */
+  currentAction?: string;
+  send: (content: string) => Promise<boolean>;
+  cancel: () => Promise<void>;
+}
+
+const turnEndEvents = new Set(["agent.completed", "agent.failed", "agent.cancelled"]);
+
+export function useConversation(agentId: string): Conversation {
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>();
+  const [currentAction, setCurrentAction] = useState<string>();
+
+  const reload = useCallback(async () => {
+    try {
+      setMessages(await listMessages(agentId));
+      setError(undefined);
+    } catch (caught) {
+      setError(describeError(caught, "The conversation could not be loaded."));
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    setLoading(true);
+    setCurrentAction(undefined);
+    void reload();
+  }, [reload]);
+
+  useRuntimeEvents((event: RuntimeEvent) => {
+    const eventAgentId = event.payload.agentId ?? event.aggregateId;
+    if (eventAgentId !== agentId) return;
+    if (event.eventType === "message.created") void reload();
+    else if (event.eventType === "tool.started" && typeof event.payload.detail === "string") {
+      setCurrentAction(event.payload.detail);
+    } else if (event.eventType === "tool.completed" || event.eventType === "tool.failed") {
+      setCurrentAction(undefined);
+    } else if (turnEndEvents.has(event.eventType)) setCurrentAction(undefined);
+  });
+
+  const send = useCallback(
+    async (content: string) => {
+      try {
+        const message = await sendMessage(agentId, content);
+        setMessages((current) =>
+          current.some((candidate) => candidate.id === message.id) ? current : [...current, message]
+        );
+        setError(undefined);
+        return true;
+      } catch (caught) {
+        setError(describeError(caught, "The message could not be sent."));
+        return false;
+      }
+    },
+    [agentId]
+  );
+
+  const cancel = useCallback(async () => {
+    try {
+      await cancelTurn(agentId);
+    } catch (caught) {
+      setError(describeError(caught, "The turn could not be stopped."));
+    }
+  }, [agentId]);
+
+  return { messages, loading, error, currentAction, send, cancel };
+}

@@ -68,6 +68,15 @@ export function App() {
     }
   }, []);
 
+  /** Refreshes agent status without re-running provider detection. */
+  const reloadAgents = useCallback(async () => {
+    try {
+      setAgents((await listAgents()).agents);
+    } catch (caught) {
+      setError(describeError(caught, "Agents could not be reloaded."));
+    }
+  }, []);
+
   const loadApprovals = useCallback(async () => {
     try {
       setApprovals(await listApprovals());
@@ -95,6 +104,7 @@ export function App() {
   useRuntimeEvents((event) => {
     setEvents((current) => mergeRuntimeEvent(current, event, activityLimit));
     if (event.eventType.startsWith("approval.")) void loadApprovals();
+    if (event.eventType.startsWith("agent.")) void reloadAgents();
     notifications.notifyFor(event, agents);
   });
   useEffect(() => {
@@ -178,7 +188,11 @@ export function App() {
             <div className="mx-auto max-w-6xl px-8 py-8">{page}</div>
           </div>
         ) : selectedAgent ? (
-          <AgentConversation key={selectedAgent.id} agent={selectedAgent} />
+          <AgentConversation
+            key={selectedAgent.id}
+            agent={selectedAgent}
+            provider={providers.find((provider) => provider.id === selectedAgent.providerId)}
+          />
         ) : (
           <NoConversation onCreate={() => setCreateOpen(true)} />
         )}
@@ -186,6 +200,7 @@ export function App() {
       <NewAgentDialog
         open={createOpen}
         busy={creating}
+        providers={providers}
         onClose={() => setCreateOpen(false)}
         onSubmit={handleCreate}
       />

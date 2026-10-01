@@ -89,6 +89,28 @@ impl Default for AgentPermissions {
     }
 }
 
+/// How much a provider may change the agent's workspace during a turn.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorkspaceAccess {
+    ReadOnly,
+    WorkspaceWrite,
+}
+
+impl AgentPermissions {
+    /// Writing requires both workspace-scoped files and unattended shell access, because
+    /// providers apply edits by running commands. Anything stricter stays read-only.
+    pub fn workspace_access(&self) -> WorkspaceAccess {
+        if self.filesystem == PermissionLevel::WorkspaceOnly
+            && self.shell == PermissionLevel::Allowed
+        {
+            WorkspaceAccess::WorkspaceWrite
+        } else {
+            WorkspaceAccess::ReadOnly
+        }
+    }
+}
+
 impl Agent {
     pub fn create(input: NewAgent) -> DomainResult<Self> {
         if input.name.trim().len() < 2 {
@@ -134,7 +156,8 @@ impl Agent {
                 AgentStatus::Working | AgentStatus::Paused
             ) | (
                 AgentStatus::Working,
-                AgentStatus::Waiting
+                AgentStatus::Idle
+                    | AgentStatus::Waiting
                     | AgentStatus::Paused
                     | AgentStatus::Failed
                     | AgentStatus::Completed
@@ -183,6 +206,25 @@ mod tests {
     fn rejects_invalid_status_transitions() {
         let mut agent = Agent::create(input()).expect("valid agent");
         assert!(agent.transition_to(AgentStatus::Completed).is_err());
+    }
+    #[test]
+    fn returns_to_idle_after_a_turn() {
+        let mut agent = Agent::create(input()).expect("valid agent");
+        agent.transition_to(AgentStatus::Working).expect("start");
+        agent.transition_to(AgentStatus::Idle).expect("finish");
+        assert_eq!(agent.status, AgentStatus::Idle);
+    }
+    #[test]
+    fn grants_workspace_writes_only_with_unattended_shell() {
+        let mut permissions = AgentPermissions::default();
+        assert_eq!(permissions.workspace_access(), WorkspaceAccess::ReadOnly);
+        permissions.shell = PermissionLevel::Allowed;
+        assert_eq!(
+            permissions.workspace_access(),
+            WorkspaceAccess::WorkspaceWrite
+        );
+        permissions.filesystem = PermissionLevel::Denied;
+        assert_eq!(permissions.workspace_access(), WorkspaceAccess::ReadOnly);
     }
     #[test]
     fn allows_working_agent_to_wait() {

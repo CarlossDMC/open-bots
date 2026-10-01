@@ -26,8 +26,7 @@ export function AgentMemorySection({ agentId }: { agentId: string }) {
         <Brain size={14} /> Memory
       </h2>
       <p className="mb-3 text-xs text-foreground-faint">
-        Durable notes stored locally. They are not sent to the provider yet because live sessions
-        are not implemented.
+        Durable notes stored locally. They are shared with the provider when a new session starts.
       </p>
       <form className="flex gap-2" onSubmit={(event) => void handleSubmit(event)}>
         <Input

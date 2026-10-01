@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod approvals;
 pub mod artifacts;
+pub mod conversations;
 pub mod events;
 pub mod memories;
 pub mod routines;

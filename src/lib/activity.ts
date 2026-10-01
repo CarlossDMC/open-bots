@@ -2,6 +2,9 @@ import type { ActivityEvent, Agent, RuntimeEvent } from "@/types/domain";
 
 const fixedDetails: Record<string, string> = {
   "agent.created": "Agent created",
+  "agent.started": "Started working",
+  "agent.completed": "Finished the turn",
+  "agent.cancelled": "Stopped",
   "memory.added": "Memory added",
   "memory.removed": "Memory removed"
 };
@@ -57,6 +60,14 @@ function describeDetail(event: RuntimeEvent): string {
   if (approval) {
     const action = stringField(event.payload, "action");
     return action ? `${approval}: ${action}` : approval;
+  }
+  if (event.eventType === "message.created") {
+    const role = stringField(event.payload, "role");
+    return role === "user" ? "Received a message" : role === "agent" ? "Replied" : "Runtime notice";
+  }
+  if (event.eventType === "agent.failed") {
+    const detail = stringField(event.payload, "detail");
+    return detail ? `Failed: ${detail}` : "Failed";
   }
   const routine = routineDetails[event.eventType];
   if (routine) {

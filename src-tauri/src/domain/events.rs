@@ -29,6 +29,10 @@ pub enum EventType {
     AgentFailed,
     #[serde(rename = "agent.completed")]
     AgentCompleted,
+    #[serde(rename = "agent.cancelled")]
+    AgentCancelled,
+    #[serde(rename = "message.created")]
+    MessageCreated,
     #[serde(rename = "task.created")]
     TaskCreated,
     #[serde(rename = "task.assigned")]

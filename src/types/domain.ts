@@ -130,3 +130,13 @@ export interface NewRoutineInput {
   instructions: string;
   schedule: RoutineSchedule;
 }
+
+export type MessageRole = "user" | "agent" | "system";
+
+export interface ConversationMessage {
+  id: string;
+  agentId: string;
+  role: MessageRole;
+  content: string;
+  createdAt: string;
+}

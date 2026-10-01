@@ -6,6 +6,7 @@ import type { ResolvedTheme } from "@/lib/theme";
 import type {
   Agent,
   AgentMemory,
+  ConversationMessage,
   ApprovalDecision,
   ApprovalRequest,
   NewAgentInput,
@@ -134,6 +135,25 @@ export async function setRoutineEnabled(id: string, enabled: boolean): Promise<R
 export async function deleteRoutine(id: string): Promise<void> {
   if (!isTauriRuntime()) throw new Error(routinesUnavailableMessage);
   await invoke("delete_routine", { id });
+}
+
+/** Provider turns run in the desktop runtime; the browser preview cannot start them. */
+export const messagingUnavailableMessage = "Messaging requires the desktop runtime.";
+
+export async function listMessages(agentId: string): Promise<ConversationMessage[]> {
+  if (!isTauriRuntime()) return [];
+  return invoke<ConversationMessage[]>("list_messages", { agentId });
+}
+
+/** Records the message and starts a turn. Replies arrive as runtime events. */
+export async function sendMessage(agentId: string, content: string): Promise<ConversationMessage> {
+  if (!isTauriRuntime()) throw new Error(messagingUnavailableMessage);
+  return invoke<ConversationMessage>("send_message", { agentId, content });
+}
+
+export async function cancelTurn(agentId: string): Promise<void> {
+  if (!isTauriRuntime()) throw new Error(messagingUnavailableMessage);
+  await invoke("cancel_turn", { agentId });
 }
 
 /** Aligns the native title bar with the app theme. `null` lets it follow the operating system. */

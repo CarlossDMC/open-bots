@@ -1,12 +1,18 @@
+mod codex;
 mod mock;
 mod registry;
 
+use std::path::PathBuf;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use tokio::sync::mpsc;
 
-use crate::error::AppResult;
+use crate::{
+    domain::agents::WorkspaceAccess, error::AppResult, runtime::cancellation::CancellationSignal,
+};
 
+pub use codex::CodexProvider;
 pub use mock::MockProvider;
 pub use registry::ProviderRegistry;
 
@@ -50,25 +56,43 @@ pub enum ProviderCapability {
     ContextCompaction,
 }
 
-#[derive(Debug, Clone)]
-pub struct StartSessionInput {
-    pub system_instructions: String,
-    pub workspace: String,
+/// One user turn sent to a provider. Providers that keep server-side or local sessions
+/// receive the session from a previous turn and return the session they used.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnRequest {
+    pub session_id: Option<String>,
+    pub prompt: String,
+    pub workspace: PathBuf,
+    pub access: WorkspaceAccess,
 }
-#[derive(Debug, Clone)]
-pub struct ProviderSession {
-    pub id: String,
+
+/// Progress reported while a turn runs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnEvent {
+    SessionStarted {
+        session_id: String,
+    },
+    Message {
+        text: String,
+    },
+    ActionStarted {
+        id: String,
+        summary: String,
+    },
+    ActionCompleted {
+        id: String,
+        summary: String,
+        succeeded: bool,
+    },
 }
-#[derive(Debug, Clone)]
-pub struct ProviderRequest {
-    pub session_id: String,
-    pub messages: Vec<Value>,
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnOutcome {
+    pub session_id: Option<String>,
+    pub cancelled: bool,
 }
-#[derive(Debug, Clone)]
-pub struct ProviderResponse {
-    pub content: String,
-    pub structured_action: Option<Value>,
-}
+
+pub type TurnEvents = mpsc::UnboundedSender<TurnEvent>;
 
 #[async_trait]
 pub trait AgentProvider: Send + Sync {
@@ -76,7 +100,11 @@ pub trait AgentProvider: Send + Sync {
     fn name(&self) -> &'static str;
     async fn detect(&self) -> AppResult<ProviderSummary>;
     fn capabilities(&self) -> Vec<ProviderCapability>;
-    async fn start_session(&self, input: StartSessionInput) -> AppResult<ProviderSession>;
-    async fn send(&self, input: ProviderRequest) -> AppResult<ProviderResponse>;
-    async fn cancel(&self, session_id: &str) -> AppResult<()>;
+    /// Runs one turn, reporting progress on `events` until it finishes or is cancelled.
+    async fn run_turn(
+        &self,
+        request: TurnRequest,
+        events: TurnEvents,
+        cancellation: CancellationSignal,
+    ) -> AppResult<TurnOutcome>;
 }

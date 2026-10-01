@@ -20,11 +20,16 @@ The domain contains agents, tasks, events, approvals, artifacts, identity, permi
 
 ### Agent runtime
 
-The future runtime will wake from structured events, restore state, request a provider action, execute an approved tool, persist results, and either continue or suspend. The current code provides the event bus and boundaries only; the execution loop is not implemented.
+`ConversationService` runs one turn per user message. It records the message, moves the agent to `working`, and runs the provider turn in the background. It persists each reply and publishes `message.created`, `tool.*`, and `agent.started`/`completed`/`failed`/`cancelled` events. One turn runs per agent at a time, and Stop cancels it by killing the provider process. A provider session id is stored per agent and provider, so the next message resumes the same session. The first turn of a session carries the agent's identity, instructions, and memories as a leading context block. Turns that were running when the application closed are marked failed on the next start. Routine triggers, approvals, and tasks do not start turns yet.
 
 ### Provider adapters
 
-`AgentProvider` describes detection, capabilities, session startup, requests, and cancellation. `ProviderRegistry` locates adapters without provider conditionals in runtime code. The only current implementation is `MockProvider`, a deterministic development adapter that performs no model inference.
+`AgentProvider` describes detection, capabilities, and `run_turn`, which streams provider-neutral `TurnEvent`s and honours a cancellation signal. `ProviderRegistry` locates adapters without provider conditionals in runtime code.
+
+- `MockProvider` is a deterministic development adapter that performs no model inference.
+- `CodexProvider` drives the official Codex CLI through `codex exec --json` for new sessions and `codex exec resume --json` for follow-ups. The prompt goes through stdin. The sandbox is `read-only` unless the agent has unattended shell and workspace-only filesystem access, in which case it is `workspace-write`. Detection runs `codex --version` and `codex login status`. Their output and Codex credentials are never read into application storage or logs. The adapter maps the documented JSONL events and ignores unknown ones. The verified CLI version and flags are recorded in `src-tauri/src/providers/codex.rs`.
+
+Provider CLIs run through `LineProcessRunner` in process infrastructure, which streams stdout lines, keeps a bounded stderr tail for errors, and kills the process on cancellation.
 
 Provider authentication should remain owned by official provider software whenever possible. Detection must report unknown state when authentication cannot be verified reliably.
 

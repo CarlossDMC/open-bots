@@ -47,6 +47,16 @@ describe("toActivityEvent", () => {
     expect(activity.detail).toBe("Routine triggered: Morning digest");
   });
 
+  it("describes conversation turns", () => {
+    const detail = (eventType: string, payload: Record<string, unknown> = {}) =>
+      toActivityEvent(runtimeEvent({ eventType, payload }), []).detail;
+    expect(detail("message.created", { role: "user" })).toBe("Received a message");
+    expect(detail("message.created", { role: "agent" })).toBe("Replied");
+    expect(detail("agent.failed", { detail: "usage limit" })).toBe("Failed: usage limit");
+    expect(detail("agent.failed")).toBe("Failed");
+    expect(detail("agent.cancelled")).toBe("Stopped");
+  });
+
   it("includes the action in approval details", () => {
     const activity = toActivityEvent(
       runtimeEvent({ eventType: "approval.denied", payload: { action: "git push" } }),

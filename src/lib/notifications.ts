@@ -21,7 +21,7 @@ export function isNotificationSupported(): boolean {
 
 /** Only events that need the user's attention produce a notification. */
 export function notificationFor(event: RuntimeEvent, agents: Agent[]): DesktopNotification | null {
-  const agentId = event.payload.agentId;
+  const agentId = event.payload.agentId ?? event.aggregateId;
   const agentName = agents.find((agent) => agent.id === agentId)?.name ?? "An agent";
   const text = (key: string) => {
     const value = event.payload[key];
@@ -33,6 +33,10 @@ export function notificationFor(event: RuntimeEvent, agents: Agent[]): DesktopNo
         title: "Approval needed",
         body: `${agentName} wants to run: ${text("action")}`.trim()
       };
+    case "agent.completed":
+      return { title: agentName, body: "Replied to your message" };
+    case "agent.failed":
+      return { title: agentName, body: text("detail") || "The turn failed" };
     case "routine.triggered":
       return { title: `${agentName} · routine`, body: text("name") || "A routine was triggered" };
     default:
