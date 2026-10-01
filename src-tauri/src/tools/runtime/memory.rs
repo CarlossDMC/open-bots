@@ -57,7 +57,7 @@ impl Tool for MemorySaveTool {
         let input: Input = parse_input(request.input)?;
         let memory = self
             .memories
-            .add(request.context.agent_id, &input.content)?;
+            .add_learned(request.context.agent_id, &input.content)?;
         Ok(ToolResult {
             output: json!({ "memoryId": memory.id }),
             summary: "Saved to memory.".into(),

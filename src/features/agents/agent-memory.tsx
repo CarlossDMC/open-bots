@@ -1,16 +1,24 @@
-import { Brain, Loader2, Trash2 } from "lucide-react";
+import { Bot, Brain, Loader2, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAgentMemories } from "@/hooks/use-agent-memories";
+import { useRuntimeEvents } from "@/hooks/use-runtime-events";
 import { formatRelativeTime } from "@/lib/utils";
 
 const maxMemoryLength = 2000;
 
 export function AgentMemorySection({ agentId }: { agentId: string }) {
-  const { memories, loading, error, add, remove } = useAgentMemories(agentId);
+  const { memories, loading, error, add, remove, reload } = useAgentMemories(agentId);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // The agent saves memories during its turns.
+  useRuntimeEvents((event) => {
+    if (event.eventType.startsWith("memory.") && event.payload.agentId === agentId) {
+      void reload();
+    }
+  });
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -26,7 +34,8 @@ export function AgentMemorySection({ agentId }: { agentId: string }) {
         <Brain size={14} /> Memory
       </h2>
       <p className="mb-3 text-xs text-foreground-faint">
-        Durable notes stored locally. They are shared with the provider when a new session starts.
+        Durable notes stored locally. The agent can save its own, and all are shared with the
+        provider when a new session starts.
       </p>
       <form className="flex gap-2" onSubmit={(event) => void handleSubmit(event)}>
         <Input
@@ -57,6 +66,14 @@ export function AgentMemorySection({ agentId }: { agentId: string }) {
               <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm text-foreground-secondary">
                 {memory.content}
               </p>
+              {memory.source === "agent" ? (
+                <span
+                  className="flex shrink-0 items-center gap-1 pt-0.5 text-2xs text-foreground-faint"
+                  title="Saved by the agent"
+                >
+                  <Bot size={11} aria-hidden /> Learned
+                </span>
+              ) : null}
               <time className="shrink-0 pt-0.5 text-2xs tabular-nums text-foreground-faint">
                 {formatRelativeTime(memory.createdAt)}
               </time>

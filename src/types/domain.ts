@@ -112,6 +112,8 @@ export interface AgentMemory {
   id: string;
   agentId: string;
   content: string;
+  /** "agent" when the agent saved it through memory_save. */
+  source: "user" | "agent";
   createdAt: string;
 }
 

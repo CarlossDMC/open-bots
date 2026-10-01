@@ -3,7 +3,10 @@ use std::sync::Arc;
 use rusqlite::{params, Row};
 use uuid::Uuid;
 
-use crate::{domain::memories::AgentMemory, error::AppResult};
+use crate::{
+    domain::memories::{AgentMemory, MemorySource},
+    error::AppResult,
+};
 
 use super::Database;
 
@@ -28,7 +31,7 @@ impl MemoryRepository for SqliteMemoryRepository {
     fn list_for_agent(&self, agent_id: Uuid) -> AppResult<Vec<AgentMemory>> {
         self.database.with_connection(|connection| {
             let mut statement = connection.prepare(
-                "SELECT id, agent_id, content, created_at FROM agent_memories \
+                "SELECT id, agent_id, content, source, created_at FROM agent_memories \
                  WHERE agent_id = ?1 ORDER BY created_at DESC",
             )?;
             let memories = statement
@@ -41,7 +44,7 @@ impl MemoryRepository for SqliteMemoryRepository {
     fn find(&self, id: Uuid) -> AppResult<Option<AgentMemory>> {
         self.database.with_connection(|connection| {
             let mut statement = connection.prepare(
-                "SELECT id, agent_id, content, created_at FROM agent_memories WHERE id = ?1",
+                "SELECT id, agent_id, content, source, created_at FROM agent_memories WHERE id = ?1",
             )?;
             let mut rows = statement.query([id.to_string()])?;
             Ok(rows.next()?.map(map_memory).transpose()?)
@@ -51,12 +54,13 @@ impl MemoryRepository for SqliteMemoryRepository {
     fn save(&self, memory: &AgentMemory) -> AppResult<()> {
         self.database.with_connection(|connection| {
             connection.execute(
-                "INSERT INTO agent_memories (id, agent_id, content, created_at) VALUES (?1, ?2, ?3, ?4) \
-                 ON CONFLICT(id) DO UPDATE SET content=excluded.content",
+                "INSERT INTO agent_memories (id, agent_id, content, source, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET content=excluded.content",
                 params![
                     memory.id.to_string(),
                     memory.agent_id.to_string(),
                     memory.content,
+                    source_name(memory.source),
                     memory.created_at.to_rfc3339(),
                 ],
             )?;
@@ -77,8 +81,19 @@ fn map_memory(row: &Row<'_>) -> rusqlite::Result<AgentMemory> {
         id: parse(row.get::<_, String>(0)?)?,
         agent_id: parse(row.get::<_, String>(1)?)?,
         content: row.get(2)?,
-        created_at: parse(row.get::<_, String>(3)?)?,
+        source: match row.get::<_, String>(3)?.as_str() {
+            "agent" => MemorySource::Agent,
+            _ => MemorySource::User,
+        },
+        created_at: parse(row.get::<_, String>(4)?)?,
     })
+}
+
+fn source_name(source: MemorySource) -> &'static str {
+    match source {
+        MemorySource::User => "user",
+        MemorySource::Agent => "agent",
+    }
 }
 
 fn parse<T: std::str::FromStr>(value: String) -> rusqlite::Result<T>

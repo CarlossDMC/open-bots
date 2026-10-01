@@ -25,7 +25,7 @@ pub use task_repository::{SqliteTaskRepository, TaskRepository};
 pub use wake_repository::{SqliteWakeRepository, WakeRepository};
 
 /// Ordered schema migrations. Each entry runs once, when `user_version` is below its version.
-const MIGRATIONS: [(i64, &str); 7] = [
+const MIGRATIONS: [(i64, &str); 8] = [
     (1, include_str!("migrations/0001_initial.sql")),
     (2, include_str!("migrations/0002_agent_memories.sql")),
     (3, include_str!("migrations/0003_routines.sql")),
@@ -33,6 +33,7 @@ const MIGRATIONS: [(i64, &str); 7] = [
     (5, include_str!("migrations/0005_agent_models.sql")),
     (6, include_str!("migrations/0006_task_ownership.sql")),
     (7, include_str!("migrations/0007_agent_wakes.sql")),
+    (8, include_str!("migrations/0008_memory_source.sql")),
 ];
 
 pub struct Database {
@@ -126,7 +127,8 @@ mod tests {
         database
             .with_connection(|connection| {
                 assert_eq!(user_version(connection), latest_version());
-                connection.prepare("SELECT id FROM agent_memories LIMIT 0")?;
+                connection.prepare("SELECT id, source FROM agent_memories LIMIT 0")?;
+                connection.prepare("SELECT id FROM agent_wakes LIMIT 0")?;
                 connection.prepare("SELECT id FROM routines LIMIT 0")?;
                 connection.prepare("SELECT id FROM conversation_messages LIMIT 0")?;
                 connection.prepare("SELECT model, reasoning_effort FROM agents LIMIT 0")?;

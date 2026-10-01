@@ -264,9 +264,11 @@ async fn tools_act_for_the_calling_agent() {
         )
         .await;
     assert_eq!(saved["isError"], false);
+    let memory = &harness.memories.list(harness.atlas.id).expect("memories")[0];
+    assert_eq!(memory.content, "The user prefers small PRs.");
     assert_eq!(
-        harness.memories.list(harness.atlas.id).expect("memories")[0].content,
-        "The user prefers small PRs."
+        memory.source,
+        open_bots_lib::domain::memories::MemorySource::Agent
     );
 
     let listed = harness.call(&atlas_token, "agent_list", json!({})).await;

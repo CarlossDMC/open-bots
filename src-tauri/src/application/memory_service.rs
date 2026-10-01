@@ -39,11 +39,21 @@ impl MemoryService {
         self.memories.list_for_agent(agent_id)
     }
 
+    /// Adds a memory the user wrote.
     pub fn add(&self, agent_id: Uuid, content: &str) -> AppResult<AgentMemory> {
+        self.save_new(agent_id, AgentMemory::create(agent_id, content)?)
+    }
+
+    /// Adds a memory the agent saved for itself through `memory_save`.
+    pub fn add_learned(&self, agent_id: Uuid, content: &str) -> AppResult<AgentMemory> {
+        self.save_new(agent_id, AgentMemory::learned(agent_id, content)?)
+    }
+
+    fn save_new(&self, agent_id: Uuid, memory: AgentMemory) -> AppResult<AgentMemory> {
         if self.agents.find(agent_id)?.is_none() {
             return Err(AppError::NotFound(format!("agent {agent_id}")));
         }
-        let memory = AgentMemory::create(agent_id, content)?;
+        AgentMemory::ensure_capacity(self.memories.list_for_agent(agent_id)?.len())?;
         self.memories.save(&memory)?;
         self.publish(EventType::MemoryAdded, &memory)?;
         tracing::info!(memory_id = %memory.id, agent_id = %agent_id, "agent memory added");
@@ -66,7 +76,7 @@ impl MemoryService {
         let event = DomainEvent::new(
             event_type,
             Some(memory.id),
-            json!({ "agentId": memory.agent_id }),
+            json!({ "agentId": memory.agent_id, "source": memory.source }),
         );
         self.events.append(&event)?;
         self.event_bus.publish(event);

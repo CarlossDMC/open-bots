@@ -132,6 +132,7 @@ export async function addMemory(agentId: string, content: string): Promise<Agent
       id: crypto.randomUUID(),
       agentId,
       content: content.trim(),
+      source: "user",
       createdAt: new Date().toISOString()
     };
     demoMemories.set(agentId, [memory, ...(demoMemories.get(agentId) ?? [])]);
