@@ -18,6 +18,9 @@
 //!   ends the turn (`is_error` reports failures). Errors raised before a model call arrive as
 //!   a synthetic assistant message (`model: "<synthetic>"`) followed by an error result.
 //! - `--resume <id>` continues a session under the same id.
+//! - Runtime tools: `--mcp-config <json> --strict-mcp-config` registers only the Open Bots
+//!   HTTP MCP server, with `Authorization: Bearer ${OPEN_BOTS_MCP_TOKEN}` expanded by the CLI
+//!   from the environment, and `mcp__open_bots` in `--allowed-tools` pre-approves its tools.
 //!
 //! Models come from a static list of aliases resolved by the CLI (`--model` documents
 //! `fable`, `opus` and `sonnet`; `haiku` was verified in a recorded run). The CLI exposes no
@@ -42,17 +45,20 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone, Utc};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use super::{
     cli::{CliOutput, CliProgram, SignInCheck, StreamEvent, TurnStreamParser},
     AgentProvider, ProviderCapability, ProviderModel, ProviderSummary, ProviderUsage, TurnEvent,
-    TurnEvents, TurnOutcome, TurnRequest, UsageWindow,
+    TurnEvents, TurnOutcome, TurnRequest, UsageWindow, RUNTIME_TOOLS_SERVER_NAME,
+    RUNTIME_TOOLS_TOKEN_ENV,
 };
 use crate::{
     domain::agents::WorkspaceAccess,
     error::{AppError, AppResult},
-    infrastructure::process::{LineCommand, LineProcessExit, LineProcessRunner},
+    infrastructure::process::{
+        LineCommand, LineProcessExit, LineProcessRunner, ProcessEnvironment,
+    },
     runtime::cancellation::CancellationSignal,
 };
 
@@ -117,6 +123,7 @@ impl AgentProvider for ClaudeProvider {
             ProviderCapability::Shell,
             ProviderCapability::ModelSelection,
             ProviderCapability::UsageLimits,
+            ProviderCapability::RuntimeTools,
         ]
     }
 
@@ -362,6 +369,12 @@ fn allowed_tools(access: WorkspaceAccess) -> &'static str {
 
 fn turn_command(request: &TurnRequest) -> LineCommand {
     let tools = allowed_tools(request.access);
+    // A server name in `--allowed-tools` pre-approves every tool that server provides.
+    let allowed = if request.runtime_tools.is_some() {
+        format!("{tools},mcp__{RUNTIME_TOOLS_SERVER_NAME}")
+    } else {
+        tools.to_owned()
+    };
     let mut arguments: Vec<String> = [
         "-p",
         "--output-format",
@@ -374,7 +387,7 @@ fn turn_command(request: &TurnRequest) -> LineCommand {
         "--tools",
         tools,
         "--allowed-tools",
-        tools,
+        &allowed,
     ]
     .into_iter()
     .map(Into::into)
@@ -389,7 +402,27 @@ fn turn_command(request: &TurnRequest) -> LineCommand {
     if let Some(session_id) = &request.session_id {
         arguments.extend(["--resume".into(), session_id.clone()]);
     }
+    let mut environment = ProcessEnvironment::default();
+    if let Some(endpoint) = &request.runtime_tools {
+        // `${VAR}` is expanded by Claude Code, so the token stays out of the arguments.
+        let config = json!({
+            "mcpServers": {
+                RUNTIME_TOOLS_SERVER_NAME: {
+                    "type": "http",
+                    "url": endpoint.url,
+                    "headers": { "Authorization": format!("Bearer ${{{RUNTIME_TOOLS_TOKEN_ENV}}}") }
+                }
+            }
+        });
+        arguments.extend([
+            "--mcp-config".into(),
+            config.to_string(),
+            "--strict-mcp-config".into(),
+        ]);
+        environment.set(RUNTIME_TOOLS_TOKEN_ENV, endpoint.token.clone());
+    }
     LineCommand {
+        environment,
         program: PROGRAM.into(),
         arguments,
         working_directory: Some(request.workspace.clone()),
@@ -511,6 +544,54 @@ mod tests {
     use chrono::FixedOffset;
     use tokio::sync::mpsc;
 
+    #[test]
+    fn registers_runtime_tools_with_the_token_in_the_environment() {
+        let mut with_tools = request(Some("session-1"), WorkspaceAccess::ReadOnly);
+        with_tools.runtime_tools = Some(crate::providers::RuntimeToolsEndpoint {
+            url: "http://127.0.0.1:4100/mcp".into(),
+            token: "secret-token".into(),
+        });
+        let command = turn_command(&with_tools);
+        let arguments = command.arguments.join(" ");
+        assert!(!arguments.contains("secret-token"));
+        assert_eq!(
+            command.environment.get("OPEN_BOTS_MCP_TOKEN"),
+            Some("secret-token")
+        );
+        let allowed = command
+            .arguments
+            .iter()
+            .position(|argument| argument == "--allowed-tools")
+            .map(|index| command.arguments[index + 1].clone());
+        assert_eq!(allowed.as_deref(), Some("Read,Glob,Grep,mcp__open_bots"));
+        let config_index = command
+            .arguments
+            .iter()
+            .position(|argument| argument == "--mcp-config")
+            .expect("mcp config");
+        let config: Value =
+            serde_json::from_str(&command.arguments[config_index + 1]).expect("json config");
+        assert_eq!(
+            config["mcpServers"]["open_bots"],
+            json!({
+                "type": "http",
+                "url": "http://127.0.0.1:4100/mcp",
+                "headers": { "Authorization": "Bearer ${OPEN_BOTS_MCP_TOKEN}" }
+            })
+        );
+        assert!(command
+            .arguments
+            .contains(&"--strict-mcp-config".to_owned()));
+        assert!(!format!("{command:?}").contains("secret-token"));
+    }
+
+    #[test]
+    fn omits_runtime_tools_when_not_offered() {
+        let command = turn_command(&request(None, WorkspaceAccess::ReadOnly));
+        assert!(!command.arguments.contains(&"--mcp-config".to_owned()));
+        assert_eq!(command.environment.get("OPEN_BOTS_MCP_TOKEN"), None);
+    }
+
     fn request(session_id: Option<&str>, access: WorkspaceAccess) -> TurnRequest {
         TurnRequest {
             session_id: session_id.map(str::to_owned),
@@ -519,6 +600,7 @@ mod tests {
             access,
             model: None,
             reasoning_effort: None,
+            runtime_tools: None,
         }
     }
 

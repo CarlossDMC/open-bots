@@ -10,6 +10,11 @@
 //! - Model: `-m <model>` on both commands; reasoning effort through the documented
 //!   `model_reasoning_effort` config key (`-c model_reasoning_effort="<effort>"`).
 //! - The prompt is read from stdin (`-`) so it never appears in a command line.
+//! - Runtime tools: `-c mcp_servers.open_bots.url="<url>"`,
+//!   `-c mcp_servers.open_bots.bearer_token_env_var="OPEN_BOTS_MCP_TOKEN"` and
+//!   `-c mcp_servers.open_bots.default_tools_approval_mode="approve"` on new and resumed
+//!   turns (`codex -c … mcp list` shows the server enabled with bearer auth). `exec` never
+//!   prompts, so without a pre-approval mode its MCP calls would be rejected.
 //! - `--json` prints JSONL events: `thread.started` carries the session id, `item.*` events
 //!   describe agent messages and actions, and `turn.failed` / `error` report failures.
 //!
@@ -31,14 +36,15 @@ use serde_json::{json, Value};
 use super::{
     cli::{CliOutput, CliProgram, SignInCheck, StreamEvent, TurnStreamParser},
     AgentProvider, ProviderCapability, ProviderModel, ProviderSummary, ProviderUsage, TurnEvent,
-    TurnEvents, TurnOutcome, TurnRequest, UsageWindow,
+    TurnEvents, TurnOutcome, TurnRequest, UsageWindow, RUNTIME_TOOLS_SERVER_NAME,
+    RUNTIME_TOOLS_TOKEN_ENV,
 };
 use crate::{
     domain::agents::WorkspaceAccess,
     error::{AppError, AppResult},
     infrastructure::process::{
         JsonRpcError, JsonRpcExit, JsonRpcMessage, JsonRpcProcessClient, JsonRpcSession,
-        LineCommand, LineProcessRunner,
+        LineCommand, LineProcessRunner, ProcessEnvironment,
     },
     runtime::cancellation::CancellationSignal,
 };
@@ -156,6 +162,7 @@ impl AgentProvider for CodexProvider {
             ProviderCapability::Shell,
             ProviderCapability::ModelSelection,
             ProviderCapability::UsageLimits,
+            ProviderCapability::RuntimeTools,
         ]
     }
 
@@ -244,8 +251,24 @@ fn turn_command(request: &TurnRequest) -> LineCommand {
         ]),
         Some(session_id) => arguments.push(session_id.clone()),
     }
+    let mut environment = ProcessEnvironment::default();
+    if let Some(endpoint) = &request.runtime_tools {
+        // `exec` has no approval prompt, so the server's tools are pre-approved; the URL is
+        // a loopback address built by the runtime and the token travels in the environment.
+        let server = format!("mcp_servers.{RUNTIME_TOOLS_SERVER_NAME}");
+        arguments.extend([
+            "-c".into(),
+            format!("{server}.url=\"{}\"", endpoint.url),
+            "-c".into(),
+            format!("{server}.bearer_token_env_var=\"{RUNTIME_TOOLS_TOKEN_ENV}\""),
+            "-c".into(),
+            format!("{server}.default_tools_approval_mode=\"approve\""),
+        ]);
+        environment.set(RUNTIME_TOOLS_TOKEN_ENV, endpoint.token.clone());
+    }
     arguments.push("-".into());
     LineCommand {
+        environment,
         program: PROGRAM.into(),
         arguments,
         working_directory: Some(request.workspace.clone()),
@@ -456,6 +479,32 @@ mod tests {
         JsonRpcExit::Completed(vec![Ok(json!({})), Ok(result)])
     }
 
+    #[test]
+    fn registers_runtime_tools_on_new_and_resumed_turns() {
+        for session in [None, Some("thread-1")] {
+            let mut with_tools = request(session, WorkspaceAccess::ReadOnly);
+            with_tools.runtime_tools = Some(crate::providers::RuntimeToolsEndpoint {
+                url: "http://127.0.0.1:4100/mcp".into(),
+                token: "secret-token".into(),
+            });
+            let command = turn_command(&with_tools);
+            let arguments = command.arguments.join(" ");
+            assert!(
+                arguments.contains("-c mcp_servers.open_bots.url=\"http://127.0.0.1:4100/mcp\"")
+            );
+            assert!(arguments
+                .contains("-c mcp_servers.open_bots.bearer_token_env_var=\"OPEN_BOTS_MCP_TOKEN\""));
+            assert!(arguments
+                .contains("-c mcp_servers.open_bots.default_tools_approval_mode=\"approve\""));
+            assert!(!arguments.contains("secret-token"));
+            assert_eq!(command.arguments.last().map(String::as_str), Some("-"));
+            assert_eq!(
+                command.environment.get("OPEN_BOTS_MCP_TOKEN"),
+                Some("secret-token")
+            );
+        }
+    }
+
     fn request(session_id: Option<&str>, access: WorkspaceAccess) -> TurnRequest {
         TurnRequest {
             session_id: session_id.map(str::to_owned),
@@ -464,6 +513,7 @@ mod tests {
             access,
             model: None,
             reasoning_effort: None,
+            runtime_tools: None,
         }
     }
 

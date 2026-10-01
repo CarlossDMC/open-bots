@@ -66,6 +66,9 @@ pub enum ProviderCapability {
     ModelSelection,
     /// The provider reports account usage against its rate-limit windows.
     UsageLimits,
+    /// The provider connects to the Open Bots MCP server during a turn, so the agent can
+    /// manage tasks, memories, messages, and approvals.
+    RuntimeTools,
 }
 
 /// A model a provider can run, as reported by the provider's own catalog.
@@ -114,6 +117,31 @@ pub struct TurnRequest {
     /// `None` keeps the provider's default model.
     pub model: Option<String>,
     pub reasoning_effort: Option<String>,
+    /// Set only for providers that declare `RuntimeTools`.
+    pub runtime_tools: Option<RuntimeToolsEndpoint>,
+}
+
+/// MCP server name the adapters register, so tools appear as `mcp__open_bots__<tool>`.
+pub const RUNTIME_TOOLS_SERVER_NAME: &str = "open_bots";
+/// Environment variable that carries the per-turn bearer token to the provider process.
+pub const RUNTIME_TOOLS_TOKEN_ENV: &str = "OPEN_BOTS_MCP_TOKEN";
+
+/// Where a provider reaches the Open Bots MCP server for one turn. The token is a secret:
+/// adapters pass it through the environment, never as an argument, and `Debug` hides it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RuntimeToolsEndpoint {
+    pub url: String,
+    pub token: String,
+}
+
+impl std::fmt::Debug for RuntimeToolsEndpoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RuntimeToolsEndpoint")
+            .field("url", &self.url)
+            .field("token", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Progress reported while a turn runs.

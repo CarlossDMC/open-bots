@@ -20,10 +20,14 @@ use crate::{
     infrastructure::database::{
         AgentRepository, ConversationRepository, EventRepository, MemoryRepository,
     },
-    providers::{AgentProvider, ProviderRegistry, TurnEvent, TurnOutcome, TurnRequest},
+    providers::{
+        AgentProvider, ProviderCapability, ProviderRegistry, RuntimeToolsEndpoint, TurnEvent,
+        TurnOutcome, TurnRequest,
+    },
     runtime::{
         cancellation::{cancellation_pair, CancellationSignal, Canceller},
         event_bus::EventBus,
+        turn_tokens::{TurnContext, TurnTokens},
     },
 };
 
@@ -41,6 +45,13 @@ pub struct ConversationService {
     event_bus: EventBus,
     running: Mutex<HashMap<Uuid, Canceller>>,
     chain_depths: Mutex<HashMap<Uuid, u32>>,
+    runtime_tools: Option<RuntimeToolsAccess>,
+}
+
+/// The local MCP server and the token registry it authenticates against.
+struct RuntimeToolsAccess {
+    url: String,
+    tokens: Arc<TurnTokens>,
 }
 
 impl ConversationService {
@@ -61,7 +72,15 @@ impl ConversationService {
             event_bus,
             running: Mutex::new(HashMap::new()),
             chain_depths: Mutex::new(HashMap::new()),
+            runtime_tools: None,
         }
+    }
+
+    /// Offers the runtime tools at `url` to providers that support them. Each turn gets
+    /// its own token, revoked when the turn ends.
+    pub fn with_runtime_tools(mut self, url: String, tokens: Arc<TurnTokens>) -> Self {
+        self.runtime_tools = Some(RuntimeToolsAccess { url, tokens });
+        self
     }
 
     pub fn list(&self, agent_id: Uuid) -> AppResult<Vec<ConversationMessage>> {
@@ -234,11 +253,26 @@ impl ConversationService {
         let session_id = self
             .conversations
             .provider_session(agent.id, provider.id())?;
+        let runtime_tools = self
+            .runtime_tools
+            .as_ref()
+            .filter(|_| {
+                provider
+                    .capabilities()
+                    .contains(&ProviderCapability::RuntimeTools)
+            })
+            .map(|access| RuntimeToolsEndpoint {
+                url: access.url.clone(),
+                token: access.tokens.issue(TurnContext {
+                    agent_id: agent.id,
+                    chain_depth: self.chain_depth(agent.id),
+                }),
+            });
         let prompt = match session_id {
             Some(_) => content.to_owned(),
             None => {
                 let memories = self.memories.list_for_agent(agent.id)?;
-                first_turn_prompt(agent, &memories, content)
+                first_turn_prompt(agent, &memories, content, runtime_tools.is_some())
             }
         };
         let request = TurnRequest {
@@ -248,6 +282,7 @@ impl ConversationService {
             access: agent.permissions.workspace_access(),
             model: agent.model_selection.model().map(str::to_owned),
             reasoning_effort: agent.model_selection.reasoning_effort().map(str::to_owned),
+            runtime_tools: runtime_tools.clone(),
         };
         let (sender, mut receiver) = mpsc::unbounded_channel();
         let drain = async {
@@ -258,6 +293,9 @@ impl ConversationService {
             }
         };
         let (outcome, ()) = tokio::join!(provider.run_turn(request, sender, signal), drain);
+        if let (Some(access), Some(endpoint)) = (&self.runtime_tools, &runtime_tools) {
+            access.tokens.revoke(&endpoint.token);
+        }
         outcome
     }
 

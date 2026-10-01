@@ -12,18 +12,20 @@ use std::sync::Arc;
 use application::{
     run_agent_runtime, run_routine_scheduler, ActivityService, AgentRuntime, AgentService,
     ApprovalService, ConversationService, MemoryService, ProviderService, RoutineService,
-    SettingsService, TaskService,
+    SettingsService, TaskService, ToolService,
 };
+use domain::approvals::DefaultApprovalPolicy;
 use infrastructure::{
     database::{
         Database, SqliteAgentRepository, SqliteApprovalRepository, SqliteConversationRepository,
         SqliteEventRepository, SqliteMemoryRepository, SqliteRoutineRepository,
         SqliteSettingsRepository, SqliteTaskRepository, SqliteWakeRepository,
     },
+    mcp::McpListener,
     process::{TokioJsonRpcProcessClient, TokioLineProcessRunner},
 };
 use providers::{ClaudeProvider, CodexProvider, MockProvider, ProviderRegistry};
-use runtime::event_bus::EventBus;
+use runtime::{event_bus::EventBus, turn_tokens::TurnTokens};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;
 use tracing_subscriber::EnvFilter;
@@ -34,7 +36,7 @@ const RUNTIME_EVENT_CHANNEL: &str = "runtime-event";
 pub struct AppState {
     agents: AgentService,
     approvals: ApprovalService,
-    memories: MemoryService,
+    memories: Arc<MemoryService>,
     activity: ActivityService,
     routines: Arc<RoutineService>,
     tasks: Arc<TaskService>,
@@ -95,23 +97,28 @@ pub fn run() {
                 event_repository.clone(),
                 event_bus.clone(),
             );
-            let conversations = Arc::new(ConversationService::new(
-                agent_repository.clone(),
-                conversation_repository,
-                memory_repository.clone(),
-                Arc::clone(&providers),
-                event_repository.clone(),
-                event_bus.clone(),
-            ));
+            let turn_tokens = TurnTokens::new();
+            let mcp_listener = McpListener::bind()?;
+            let conversations = Arc::new(
+                ConversationService::new(
+                    agent_repository.clone(),
+                    conversation_repository,
+                    memory_repository.clone(),
+                    Arc::clone(&providers),
+                    event_repository.clone(),
+                    event_bus.clone(),
+                )
+                .with_runtime_tools(mcp_listener.url(), Arc::clone(&turn_tokens)),
+            );
             if let Err(error) = conversations.recover_interrupted() {
                 tracing::error!(%error, "interrupted turns could not be recovered");
             }
-            let memories = MemoryService::new(
+            let memories = Arc::new(MemoryService::new(
                 memory_repository,
                 agent_repository.clone(),
                 event_repository.clone(),
                 event_bus.clone(),
-            );
+            ));
             let tasks = Arc::new(TaskService::new(
                 task_repository.clone(),
                 agent_repository.clone(),
@@ -124,6 +131,20 @@ pub fn run() {
                 event_repository.clone(),
                 event_bus.clone(),
             ));
+            let mut tool_registry = tools::ToolRegistry::default();
+            tools::runtime::register_runtime_tools(
+                &mut tool_registry,
+                &tools::runtime::RuntimeToolServices {
+                    agents: agent_repository.clone(),
+                    memories: Arc::clone(&memories),
+                    tasks: Arc::clone(&tasks),
+                },
+            )?;
+            let tool_service = Arc::new(ToolService::new(
+                tool_registry,
+                Arc::new(DefaultApprovalPolicy),
+            ));
+            tauri::async_runtime::spawn(mcp_listener.serve(tool_service, turn_tokens));
             let agent_runtime = Arc::new(AgentRuntime::new(
                 wake_repository,
                 agent_repository,

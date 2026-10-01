@@ -1,4 +1,4 @@
-use std::{path::PathBuf, process::Stdio};
+use std::{collections::BTreeMap, fmt, path::PathBuf, process::Stdio};
 
 use async_trait::async_trait;
 use tokio::{
@@ -21,6 +21,32 @@ pub struct LineCommand {
     pub working_directory: Option<PathBuf>,
     /// Written to stdin, which is then closed. Keeps prompts out of the command line.
     pub stdin: Option<String>,
+    /// Extra environment variables. Values may be secrets, so they never appear in
+    /// `Debug` output or on the command line.
+    pub environment: ProcessEnvironment,
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct ProcessEnvironment(BTreeMap<String, String>);
+
+impl ProcessEnvironment {
+    pub fn set(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.0.insert(key.into(), value.into());
+    }
+
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).map(String::as_str)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.0.iter()
+    }
+}
+
+impl fmt::Debug for ProcessEnvironment {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_list().entries(self.0.keys()).finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,6 +100,7 @@ impl LineProcessRunner for TokioLineProcessRunner {
             })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .envs(command.environment.iter())
             .kill_on_drop(true);
         if let Some(directory) = &command.working_directory {
             process.current_dir(directory);
@@ -166,6 +193,7 @@ mod tests {
 
     fn shell(script: &str, stdin: Option<&str>) -> LineCommand {
         LineCommand {
+            environment: ProcessEnvironment::default(),
             program: "sh".into(),
             arguments: vec!["-c".into(), script.into()],
             working_directory: None,
@@ -233,6 +261,7 @@ mod tests {
         let exit = TokioLineProcessRunner
             .run(
                 LineCommand {
+                    environment: ProcessEnvironment::default(),
                     program: "open-bots-missing-program".into(),
                     arguments: Vec::new(),
                     working_directory: None,

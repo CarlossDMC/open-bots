@@ -12,7 +12,9 @@ pub use json_rpc::{
     JsonRpcError, JsonRpcExit, JsonRpcMessage, JsonRpcProcessClient, JsonRpcSession,
     TokioJsonRpcProcessClient,
 };
-pub use line_process::{LineCommand, LineProcessExit, LineProcessRunner, TokioLineProcessRunner};
+pub use line_process::{
+    LineCommand, LineProcessExit, LineProcessRunner, ProcessEnvironment, TokioLineProcessRunner,
+};
 
 #[derive(Debug, Clone)]
 pub struct ProcessSpec {

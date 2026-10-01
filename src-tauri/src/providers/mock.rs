@@ -79,6 +79,7 @@ mod tests {
                     access: WorkspaceAccess::ReadOnly,
                     model: None,
                     reasoning_effort: None,
+                    runtime_tools: None,
                 },
                 sender,
                 CancellationSignal::never(),

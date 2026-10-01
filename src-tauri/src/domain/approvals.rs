@@ -95,6 +95,10 @@ impl ApprovalPolicy for DefaultApprovalPolicy {
         }
         match context.action_id.as_str() {
             "filesystem.read" | "test.run" => ApprovalDecision::Allow,
+            // Runtime actions that only touch Open Bots state for the calling agent's team.
+            "memory.write" | "task.read" | "task.write" | "agent.read" | "agent.message" => {
+                ApprovalDecision::Allow
+            }
             "git.push" | "deploy.production" => ApprovalDecision::Ask,
             _ => ApprovalDecision::Ask,
         }
@@ -112,6 +116,32 @@ mod tests {
                 outside_workspace: false
             }),
             ApprovalDecision::Allow
+        );
+    }
+    #[test]
+    fn allows_runtime_coordination_actions() {
+        for action_id in [
+            "memory.write",
+            "task.read",
+            "task.write",
+            "agent.read",
+            "agent.message",
+        ] {
+            assert_eq!(
+                DefaultApprovalPolicy.evaluate(&ActionContext {
+                    action_id: action_id.into(),
+                    outside_workspace: false
+                }),
+                ApprovalDecision::Allow,
+                "{action_id}"
+            );
+        }
+        assert_eq!(
+            DefaultApprovalPolicy.evaluate(&ActionContext {
+                action_id: "unknown.action".into(),
+                outside_workspace: false
+            }),
+            ApprovalDecision::Ask
         );
     }
     #[test]

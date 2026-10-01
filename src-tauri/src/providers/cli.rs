@@ -83,6 +83,7 @@ impl CliProgram {
         stdin: Option<String>,
     ) -> LineCommand {
         LineCommand {
+            environment: Default::default(),
             program: self.program.into(),
             arguments,
             working_directory,

@@ -7,8 +7,13 @@ use crate::domain::{
 /// verified system-instruction channel receive a runtime preamble followed by the
 /// agent's identity, instructions, and memories as a leading context block; later turns
 /// resume the session and send only the user's message.
-pub fn first_turn_prompt(agent: &Agent, memories: &[AgentMemory], message: &str) -> String {
-    let mut context = runtime_preamble(agent);
+pub fn first_turn_prompt(
+    agent: &Agent,
+    memories: &[AgentMemory],
+    message: &str,
+    runtime_tools: bool,
+) -> String {
+    let mut context = runtime_preamble(agent, runtime_tools);
     context.push_str(&format!(
         "\n\nYou are {name}, working as {role} in an Open Bots workspace.",
         name = agent.name,
@@ -30,9 +35,18 @@ pub fn first_turn_prompt(agent: &Agent, memories: &[AgentMemory], message: &str)
     format!("<agent_context>\n{context}\n</agent_context>\n\n{message}")
 }
 
+/// Added only when the provider is connected to the Open Bots MCP server for this turn.
+const RUNTIME_TOOLS_NOTE: &str = "\nOpen Bots tools act on Open Bots for you. Their full \
+     names are mcp__open_bots__task_create, mcp__open_bots__task_update, and \
+     mcp__open_bots__task_list to manage your tasks and delegate work to other agents; \
+     mcp__open_bots__agent_list to see the team; and mcp__open_bots__memory_save to keep a \
+     note for future sessions. If they are not listed directly, look for them under those \
+     names. Save lasting preferences and corrections from the user with memory_save. \
+     Delegated agents and finished tasks wake you later, so you do not need to wait for them.";
+
 /// Describes how Open Bots runs the agent. It states only behavior the runtime enforces
 /// today, so it must change when tools, approvals, or events reach the provider.
-fn runtime_preamble(agent: &Agent) -> String {
+fn runtime_preamble(agent: &Agent, runtime_tools: bool) -> String {
     let access = match agent.permissions.workspace_access() {
         WorkspaceAccess::ReadOnly => "read-only: inspect files but do not modify them",
         WorkspaceAccess::WorkspaceWrite => {
@@ -46,8 +60,13 @@ fn runtime_preamble(agent: &Agent) -> String {
          or wait for input mid-turn. When something is ambiguous, state your assumption and \
          proceed, or end the turn with a question.\nWorkspace: {workspace}\nAccess: {access}\n\
          The identity and instructions below are defined by the user and take precedence over \
-         general defaults.\n</runtime>",
+         general defaults.{tools}\n</runtime>",
         workspace = agent.workspace,
+        tools = if runtime_tools {
+            RUNTIME_TOOLS_NOTE
+        } else {
+            ""
+        },
     )
 }
 
@@ -76,7 +95,7 @@ mod tests {
         let agent = agent("Prefer small changes.");
         let older = AgentMemory::create(Uuid::new_v4(), "Uses pnpm").expect("memory");
         let newer = AgentMemory::create(Uuid::new_v4(), "Deploys on Fridays").expect("memory");
-        let prompt = first_turn_prompt(&agent, &[newer, older], "Fix the build");
+        let prompt = first_turn_prompt(&agent, &[newer, older], "Fix the build", false);
         let (_, identity) = prompt
             .split_once("</runtime>\n\n")
             .expect("runtime preamble");
@@ -90,7 +109,7 @@ mod tests {
 
     #[test]
     fn omits_empty_sections() {
-        let prompt = first_turn_prompt(&agent(""), &[], "Hello");
+        let prompt = first_turn_prompt(&agent(""), &[], "Hello", false);
         assert!(!prompt.contains("Instructions"));
         assert!(!prompt.contains("remember"));
         assert!(prompt.ends_with("</agent_context>\n\nHello"));
@@ -99,7 +118,7 @@ mod tests {
     #[test]
     fn runtime_preamble_leads_and_describes_workspace_and_access() {
         let mut agent = agent("Prefer small changes.");
-        let prompt = first_turn_prompt(&agent, &[], "Hello");
+        let prompt = first_turn_prompt(&agent, &[], "Hello", false);
         assert!(prompt.starts_with("<agent_context>\n<runtime>\n"));
         assert!(prompt.find("</runtime>") < prompt.find("Instructions:"));
         assert!(prompt.contains("Workspace: /workspace"));
@@ -107,8 +126,17 @@ mod tests {
 
         agent.permissions.filesystem = PermissionLevel::WorkspaceOnly;
         agent.permissions.shell = PermissionLevel::Allowed;
-        assert!(first_turn_prompt(&agent, &[], "Hello").contains("Access: workspace-write"));
+        assert!(first_turn_prompt(&agent, &[], "Hello", false).contains("Access: workspace-write"));
         agent.permissions.shell = PermissionLevel::ApprovalRequired;
-        assert!(first_turn_prompt(&agent, &[], "Hello").contains("Access: read-only"));
+        assert!(first_turn_prompt(&agent, &[], "Hello", false).contains("Access: read-only"));
+    }
+
+    #[test]
+    fn mentions_runtime_tools_only_when_connected() {
+        let agent = agent("");
+        assert!(!first_turn_prompt(&agent, &[], "Hello", false).contains("memory_save"));
+        let prompt = first_turn_prompt(&agent, &[], "Hello", true);
+        assert!(prompt.contains("memory_save"));
+        assert!(prompt.find("memory_save") < prompt.find("</runtime>"));
     }
 }
