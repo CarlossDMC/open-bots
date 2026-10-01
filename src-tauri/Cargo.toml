@@ -1,6 +1,6 @@
 [package]
 name = "open-bots"
-version = "0.2.0"
+version = "0.3.0"
 description = "A local-first runtime for persistent AI agents"
 authors = ["Open Bots contributors"]
 edition = "2021"
