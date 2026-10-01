@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use open_bots_lib::{
     application::{ConversationService, MemoryService},
     domain::{
-        agents::{Agent, AgentStatus, IdentityColor, NewAgent, WorkspaceAccess},
+        agents::{Agent, AgentStatus, IdentityColor, ModelSelection, NewAgent, WorkspaceAccess},
         conversations::MessageRole,
         events::{DomainEvent, EventType},
     },
@@ -141,6 +141,8 @@ impl TestHarness {
             identity_color: IdentityColor::Indigo,
             workspace: directory.path().to_string_lossy().into_owned(),
             instructions: "Prefer small changes.".into(),
+            model_selection: ModelSelection::new(Some("model-a".into()), Some("high".into()))
+                .expect("model"),
         })
         .expect("agent");
         agents.save(&agent).expect("save agent");
@@ -244,6 +246,8 @@ async fn runs_a_turn_and_resumes_the_session_next_time() {
     assert!(requests[0].prompt.contains("- Uses pnpm"));
     assert!(requests[0].prompt.ends_with("What is in the repo?"));
     assert_eq!(requests[0].access, WorkspaceAccess::ReadOnly);
+    assert_eq!(requests[0].model.as_deref(), Some("model-a"));
+    assert_eq!(requests[0].reasoning_effort.as_deref(), Some("high"));
     assert_eq!(requests[1].session_id.as_deref(), Some("session-1"));
     assert_eq!(requests[1].prompt, "Thanks");
 }

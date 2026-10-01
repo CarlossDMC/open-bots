@@ -17,6 +17,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useConversation } from "@/hooks/use-conversation";
 import { useFreshIds } from "@/hooks/use-fresh-ids";
 import { isTauriRuntime, messagingUnavailableMessage } from "@/lib/desktop-api";
+import { describeModel } from "@/lib/models";
 import {
   fadeUp,
   iconSwap,
@@ -30,10 +31,12 @@ import type { Agent, ConversationMessage, ProviderSummary } from "@/types/domain
 
 export function AgentConversation({
   agent,
-  provider
+  provider,
+  onAgentUpdated
 }: {
   agent: Agent;
   provider?: ProviderSummary;
+  onAgentUpdated?: (agent: Agent) => void;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const conversation = useConversation(agent.id);
@@ -82,6 +85,11 @@ export function AgentConversation({
             <StatusBadge status={agent.status} className="text-2xs" />
           </m.span>
         </AnimatePresence>
+        {agent.model && (
+          <span className="truncate text-2xs text-foreground-faint" title="Model">
+            {describeModel(agent)}
+          </span>
+        )}
         <button
           type="button"
           onClick={() => setShowDetails((current) => !current)}
@@ -101,7 +109,7 @@ export function AgentConversation({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {showDetails ? (
           <div className="mx-auto max-w-5xl px-8 py-8">
-            <AgentDetails agent={agent} />
+            <AgentDetails agent={agent} provider={provider} onAgentUpdated={onAgentUpdated} />
           </div>
         ) : (
           <ol className="mx-auto max-w-3xl space-y-4 px-8 py-8" aria-label="Conversation">

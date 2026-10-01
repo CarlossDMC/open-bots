@@ -46,6 +46,7 @@ impl TestHarness {
             identity_color: IdentityColor::Indigo,
             workspace: "/tmp/open-bots-workspace".into(),
             instructions: String::new(),
+            model_selection: Default::default(),
         })
         .expect("agent");
         agents.save(&agent).expect("save agent");

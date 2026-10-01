@@ -26,10 +26,14 @@ The domain contains agents, tasks, events, approvals, artifacts, identity, permi
 
 `AgentProvider` describes detection, capabilities, and `run_turn`, which streams provider-neutral `TurnEvent`s and honours a cancellation signal. `ProviderRegistry` locates adapters without provider conditionals in runtime code.
 
-- `MockProvider` is a deterministic development adapter that performs no model inference.
-- `CodexProvider` drives the official Codex CLI through `codex exec --json` for new sessions and `codex exec resume --json` for follow-ups. The prompt goes through stdin. The sandbox is `read-only` unless the agent has unattended shell and workspace-only filesystem access, in which case it is `workspace-write`. Detection runs `codex --version` and `codex login status`. Their output and Codex credentials are never read into application storage or logs. The adapter maps the documented JSONL events and ignores unknown ones. The verified CLI version and flags are recorded in `src-tauri/src/providers/codex.rs`.
+Two optional operations sit behind capabilities. A provider with `model_selection` lists its catalog through `list_models`, and `run_turn` receives the agent's model and reasoning effort. A provider with `usage_limits` reports account usage per rate-limit window through `read_usage`. `ProviderService` checks the capability before calling either one. Each agent stores a validated `ModelSelection`, where none means the provider default. `AgentService::update_model` changes it outside a running turn and publishes `agent.updated`. The new model applies from the next turn, and the provider session is kept.
 
-Provider CLIs run through `LineProcessRunner` in process infrastructure, which streams stdout lines, keeps a bounded stderr tail for errors, and kills the process on cancellation.
+- `MockProvider` is a deterministic development adapter that performs no model inference.
+- `CodexProvider` drives the official Codex CLI through `codex exec --json` for new sessions and `codex exec resume --json` for follow-ups. The prompt goes through stdin. The model goes through `-m`, and the reasoning effort through the `model_reasoning_effort` config key. Models and usage limits are read from a short-lived `codex app-server` (`model/list`, `account/rateLimits/read`); see ADR 0006. The sandbox is `read-only` unless the agent has unattended shell and workspace-only filesystem access, in which case it is `workspace-write`. Detection runs `codex --version` and `codex login status`. Their output and Codex credentials are never read into application storage or logs. The adapter maps the documented JSONL events and ignores unknown ones. The verified CLI version and flags are recorded in `src-tauri/src/providers/codex.rs`.
+
+Provider CLIs run through `LineProcessRunner` in process infrastructure, which streams stdout lines, keeps a bounded stderr tail for errors, and kills the process on cancellation. Stdio JSON-RPC servers run through `JsonRpcProcessClient`. It keeps stdin open, sends each request and waits for the response, skips notifications, enforces a timeout, and stops the server afterwards.
+
+The desktop UI reads usage when the app starts, when the usage panel opens, a short debounce after each turn ends (`agent.completed`, `agent.failed`, `agent.cancelled`), and on manual refresh. It never polls on a timer.
 
 Provider authentication should remain owned by official provider software whenever possible. Detection must report unknown state when authentication cannot be verified reliably.
 

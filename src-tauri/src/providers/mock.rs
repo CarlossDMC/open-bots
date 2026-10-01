@@ -77,6 +77,8 @@ mod tests {
                     prompt: "hello".into(),
                     workspace: "/tmp".into(),
                     access: WorkspaceAccess::ReadOnly,
+                    model: None,
+                    reasoning_effort: None,
                 },
                 sender,
                 CancellationSignal::never(),

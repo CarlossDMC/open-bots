@@ -65,6 +65,12 @@ function describeDetail(event: RuntimeEvent): string {
     const role = stringField(event.payload, "role");
     return role === "user" ? "Received a message" : role === "agent" ? "Replied" : "Runtime notice";
   }
+  if (event.eventType === "agent.updated") {
+    const model = stringField(event.payload, "model");
+    if (!model) return "Model reset to provider default";
+    const effort = stringField(event.payload, "reasoningEffort");
+    return effort ? `Model set to ${model} (${effort})` : `Model set to ${model}`;
+  }
   if (event.eventType === "agent.failed") {
     const detail = stringField(event.payload, "detail");
     return detail ? `Failed: ${detail}` : "Failed";

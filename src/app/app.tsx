@@ -10,6 +10,7 @@ import { TasksPage } from "@/features/tasks/tasks-page";
 import { UpdateBanner } from "@/features/updates/update-banner";
 import { useAppUpdater } from "@/hooks/use-app-updater";
 import { useNotifications } from "@/hooks/use-notifications";
+import { useProviderUsage } from "@/hooks/use-provider-usage";
 import { useRuntimeEvents } from "@/hooks/use-runtime-events";
 import { useTheme } from "@/hooks/use-theme";
 import { mergeRuntimeEvent, toActivityEvent } from "@/lib/activity";
@@ -51,6 +52,7 @@ export function App() {
   const [activityError, setActivityError] = useState<string>();
   const updater = useAppUpdater();
   const notifications = useNotifications();
+  const usage = useProviderUsage();
   const { toggle: toggleTheme } = useTheme();
 
   const load = useCallback(async () => {
@@ -130,6 +132,11 @@ export function App() {
       setCreating(false);
     }
   }
+  function replaceAgent(updated: Agent) {
+    setAgents((current) =>
+      current.map((candidate) => (candidate.id === updated.id ? updated : candidate))
+    );
+  }
   function selectAgent(agent: Agent) {
     setSelectedAgentId(agent.id);
     setView("chat");
@@ -165,7 +172,14 @@ export function App() {
       />
     );
   else if (view === "settings")
-    page = <SettingsPage providers={providers} updater={updater} notifications={notifications} />;
+    page = (
+      <SettingsPage
+        providers={providers}
+        usage={usage}
+        updater={updater}
+        notifications={notifications}
+      />
+    );
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
@@ -180,6 +194,7 @@ export function App() {
         onSelectAgent={selectAgent}
         onCreateAgent={() => setCreateOpen(true)}
         onRetry={() => void load()}
+        usage={usage}
       />
       <main className="flex min-w-0 flex-1 flex-col">
         <UpdateBanner updater={updater} />
@@ -192,6 +207,7 @@ export function App() {
             key={selectedAgent.id}
             agent={selectedAgent}
             provider={providers.find((provider) => provider.id === selectedAgent.providerId)}
+            onAgentUpdated={replaceAgent}
           />
         ) : (
           <NoConversation onCreate={() => setCreateOpen(true)} />

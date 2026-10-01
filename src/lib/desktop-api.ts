@@ -11,7 +11,9 @@ import type {
   ApprovalRequest,
   NewAgentInput,
   NewRoutineInput,
+  ProviderModel,
   ProviderSummary,
+  ProviderUsageReport,
   Routine,
   RuntimeEvent
 } from "@/types/domain";
@@ -56,6 +58,30 @@ export async function createAgent(input: NewAgentInput): Promise<Agent> {
 export async function listProviders(): Promise<ProviderSummary[]> {
   if (!isTauriRuntime()) return demoProviders;
   return invoke<ProviderSummary[]>("list_providers");
+}
+
+/** The browser preview has no provider catalog, so it lists no models. */
+export async function listProviderModels(providerId: string): Promise<ProviderModel[]> {
+  if (!isTauriRuntime()) return [];
+  return invoke<ProviderModel[]>("list_provider_models", { providerId });
+}
+
+/** The browser preview reads no provider accounts, so it reports no usage. */
+export async function readProviderUsage(): Promise<ProviderUsageReport[]> {
+  if (!isTauriRuntime()) return [];
+  return invoke<ProviderUsageReport[]>("read_provider_usage");
+}
+
+/** `null` model restores the provider default. Applies from the agent's next turn. */
+export async function updateAgentModel(
+  agent: Agent,
+  model: string | null,
+  reasoningEffort: string | null
+): Promise<Agent> {
+  if (!isTauriRuntime()) {
+    return { ...agent, model, reasoningEffort, updatedAt: new Date().toISOString() };
+  }
+  return invoke<Agent>("update_agent_model", { agentId: agent.id, model, reasoningEffort });
 }
 
 export async function listEvents(limit: number): Promise<RuntimeEvent[]> {

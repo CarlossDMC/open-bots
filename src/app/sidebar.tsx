@@ -2,6 +2,8 @@ import { Activity, CheckSquare2, ListTodo, Plus, Search, Settings } from "lucide
 import { useMemo, useState } from "react";
 import { ThemeToggle } from "@/features/appearance/theme-toggle";
 import { AgentAvatar } from "@/features/agents/agent-avatar";
+import { UsageIndicator } from "@/features/providers/provider-usage";
+import type { ProviderUsageState } from "@/hooks/use-provider-usage";
 import { cn, formatConversationTime } from "@/lib/utils";
 import type { Agent } from "@/types/domain";
 
@@ -25,6 +27,7 @@ interface SidebarProps {
   onSelectAgent: (agent: Agent) => void;
   onCreateAgent: () => void;
   onRetry: () => void;
+  usage: ProviderUsageState;
 }
 
 export function Sidebar({
@@ -37,7 +40,8 @@ export function Sidebar({
   onNavigate,
   onSelectAgent,
   onCreateAgent,
-  onRetry
+  onRetry,
+  usage
 }: SidebarProps) {
   const [query, setQuery] = useState("");
   const visibleAgents = useMemo(() => {
@@ -132,6 +136,7 @@ export function Sidebar({
           ))
         )}
       </nav>
+      <UsageIndicator usage={usage} />
       <div className="flex items-center gap-0.5 border-t border-border-subtle px-3 py-2">
         <span
           className="mr-auto flex items-center gap-2 pl-1 text-2xs text-foreground-faint"

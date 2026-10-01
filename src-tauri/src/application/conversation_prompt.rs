@@ -41,6 +41,7 @@ mod tests {
             identity_color: IdentityColor::Indigo,
             workspace: "/workspace".into(),
             instructions: instructions.into(),
+            model_selection: Default::default(),
         })
         .expect("agent")
     }

@@ -4,7 +4,7 @@ use rusqlite::{params, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::agents::{Agent, AgentPermissions},
+    domain::agents::{Agent, AgentPermissions, ModelSelection},
     error::{AppError, AppResult},
 };
 
@@ -29,7 +29,7 @@ impl SqliteAgentRepository {
 impl AgentRepository for SqliteAgentRepository {
     fn list(&self) -> AppResult<Vec<Agent>> {
         self.database.with_connection(|connection| {
-            let mut statement = connection.prepare("SELECT id, name, role, description, provider_id, identity_color, avatar_variant, workspace, status, instructions, permissions_json, current_task, created_at, updated_at FROM agents ORDER BY created_at DESC")?;
+            let mut statement = connection.prepare("SELECT id, name, role, description, provider_id, identity_color, avatar_variant, workspace, status, instructions, permissions_json, current_task, created_at, updated_at, model, reasoning_effort FROM agents ORDER BY created_at DESC")?;
             let agents = statement.query_map([], map_agent)?.collect::<Result<Vec<_>, _>>()?;
             Ok(agents)
         })
@@ -37,7 +37,7 @@ impl AgentRepository for SqliteAgentRepository {
 
     fn find(&self, id: Uuid) -> AppResult<Option<Agent>> {
         self.database.with_connection(|connection| {
-            let mut statement = connection.prepare("SELECT id, name, role, description, provider_id, identity_color, avatar_variant, workspace, status, instructions, permissions_json, current_task, created_at, updated_at FROM agents WHERE id = ?1")?;
+            let mut statement = connection.prepare("SELECT id, name, role, description, provider_id, identity_color, avatar_variant, workspace, status, instructions, permissions_json, current_task, created_at, updated_at, model, reasoning_effort FROM agents WHERE id = ?1")?;
             let mut rows = statement.query([id.to_string()])?;
             rows.next()?.map(map_agent).transpose().map_err(AppError::from)
         })
@@ -45,7 +45,7 @@ impl AgentRepository for SqliteAgentRepository {
 
     fn save(&self, agent: &Agent) -> AppResult<()> {
         self.database.with_connection(|connection| {
-            connection.execute("INSERT INTO agents (id, name, role, description, provider_id, identity_color, avatar_variant, workspace, status, instructions, permissions_json, current_task, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) ON CONFLICT(id) DO UPDATE SET name=excluded.name, role=excluded.role, description=excluded.description, provider_id=excluded.provider_id, identity_color=excluded.identity_color, avatar_variant=excluded.avatar_variant, workspace=excluded.workspace, status=excluded.status, instructions=excluded.instructions, permissions_json=excluded.permissions_json, current_task=excluded.current_task, updated_at=excluded.updated_at", params![agent.id.to_string(), agent.name, agent.role, agent.description, agent.provider_id, enum_json(&agent.identity_color)?, agent.avatar_variant, agent.workspace, enum_json(&agent.status)?, agent.instructions, serde_json::to_string(&agent.permissions)?, agent.current_task, agent.created_at.to_rfc3339(), agent.updated_at.to_rfc3339()])?;
+            connection.execute("INSERT INTO agents (id, name, role, description, provider_id, identity_color, avatar_variant, workspace, status, instructions, permissions_json, current_task, created_at, updated_at, model, reasoning_effort) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16) ON CONFLICT(id) DO UPDATE SET name=excluded.name, role=excluded.role, description=excluded.description, provider_id=excluded.provider_id, identity_color=excluded.identity_color, avatar_variant=excluded.avatar_variant, workspace=excluded.workspace, status=excluded.status, instructions=excluded.instructions, permissions_json=excluded.permissions_json, current_task=excluded.current_task, updated_at=excluded.updated_at, model=excluded.model, reasoning_effort=excluded.reasoning_effort", params![agent.id.to_string(), agent.name, agent.role, agent.description, agent.provider_id, enum_json(&agent.identity_color)?, agent.avatar_variant, agent.workspace, enum_json(&agent.status)?, agent.instructions, serde_json::to_string(&agent.permissions)?, agent.current_task, agent.created_at.to_rfc3339(), agent.updated_at.to_rfc3339(), agent.model_selection.model(), agent.model_selection.reasoning_effort()])?;
             Ok(())
         })
     }
@@ -72,6 +72,7 @@ fn map_agent(row: &Row<'_>) -> rusqlite::Result<Agent> {
         current_task: row.get(11)?,
         created_at: parse(row.get::<_, String>(12)?)?,
         updated_at: parse(row.get::<_, String>(13)?)?,
+        model_selection: ModelSelection::new(row.get(14)?, row.get(15)?).map_err(to_sql_error)?,
     })
 }
 
@@ -104,9 +105,23 @@ mod tests {
             identity_color: IdentityColor::Cyan,
             workspace: "/workspace".into(),
             instructions: "Keep it clear".into(),
+            model_selection: Default::default(),
         })
         .expect("agent");
         repository.save(&agent).expect("save");
-        assert_eq!(repository.find(agent.id).expect("find"), Some(agent));
+        assert_eq!(
+            repository.find(agent.id).expect("find"),
+            Some(agent.clone())
+        );
+
+        let mut updated = agent;
+        updated
+            .change_model(
+                ModelSelection::new(Some("gpt-5.5".into()), Some("high".into()))
+                    .expect("selection"),
+            )
+            .expect("change");
+        repository.save(&updated).expect("update");
+        assert_eq!(repository.list().expect("list"), vec![updated]);
     }
 }

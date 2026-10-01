@@ -62,6 +62,7 @@ fn agent_input(provider_id: &str) -> NewAgent {
         identity_color: IdentityColor::Indigo,
         workspace: "/tmp/open-bots-workspace".into(),
         instructions: "Prefer small, testable changes.".into(),
+        model_selection: Default::default(),
     }
 }
 

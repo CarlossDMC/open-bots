@@ -11,14 +11,14 @@ use std::sync::Arc;
 
 use application::{
     run_routine_scheduler, ActivityService, AgentService, ApprovalService, ConversationService,
-    MemoryService, RoutineService,
+    MemoryService, ProviderService, RoutineService,
 };
 use infrastructure::{
     database::{
         Database, SqliteAgentRepository, SqliteApprovalRepository, SqliteConversationRepository,
         SqliteEventRepository, SqliteMemoryRepository, SqliteRoutineRepository,
     },
-    process::TokioLineProcessRunner,
+    process::{TokioJsonRpcProcessClient, TokioLineProcessRunner},
 };
 use providers::{CodexProvider, MockProvider, ProviderRegistry};
 use runtime::event_bus::EventBus;
@@ -37,6 +37,7 @@ pub struct AppState {
     routines: Arc<RoutineService>,
     conversations: Arc<ConversationService>,
     providers: Arc<ProviderRegistry>,
+    provider_catalog: ProviderService,
 }
 
 pub fn run() {
@@ -63,9 +64,10 @@ pub fn run() {
             let event_repository = Arc::new(SqliteEventRepository::new(database));
             let mut registry = ProviderRegistry::new();
             registry.register(Arc::new(MockProvider))?;
-            registry.register(Arc::new(CodexProvider::new(Arc::new(
-                TokioLineProcessRunner,
-            ))))?;
+            registry.register(Arc::new(CodexProvider::new(
+                Arc::new(TokioLineProcessRunner),
+                Arc::new(TokioJsonRpcProcessClient),
+            )))?;
             let providers = Arc::new(registry);
             let event_bus = EventBus::new(128);
             forward_runtime_events(app.handle().clone(), &event_bus);
@@ -106,6 +108,7 @@ pub fn run() {
             ));
             tauri::async_runtime::spawn(run_routine_scheduler(Arc::clone(&routines)));
             let activity = ActivityService::new(event_repository);
+            let provider_catalog = ProviderService::new(Arc::clone(&providers));
             app.manage(AppState {
                 agents,
                 approvals,
@@ -114,6 +117,7 @@ pub fn run() {
                 routines,
                 conversations,
                 providers,
+                provider_catalog,
             });
             tracing::info!(storage = %data_directory.display(), "local runtime initialized");
             Ok(())
@@ -122,6 +126,9 @@ pub fn run() {
             commands::list_agents,
             commands::create_agent,
             commands::list_providers,
+            commands::list_provider_models,
+            commands::read_provider_usage,
+            commands::update_agent_model,
             commands::list_events,
             commands::list_approvals,
             commands::resolve_approval,

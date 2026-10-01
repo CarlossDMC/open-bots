@@ -57,6 +57,16 @@ describe("toActivityEvent", () => {
     expect(detail("agent.cancelled")).toBe("Stopped");
   });
 
+  it("describes model changes", () => {
+    const detail = (payload: Record<string, unknown>) =>
+      toActivityEvent(runtimeEvent({ eventType: "agent.updated", payload }), []).detail;
+    expect(detail({ model: "gpt-5.5", reasoningEffort: "high" })).toBe(
+      "Model set to gpt-5.5 (high)"
+    );
+    expect(detail({ model: "gpt-5.5", reasoningEffort: null })).toBe("Model set to gpt-5.5");
+    expect(detail({ model: null })).toBe("Model reset to provider default");
+  });
+
   it("includes the action in approval details", () => {
     const activity = toActivityEvent(
       runtimeEvent({ eventType: "approval.denied", payload: { action: "git push" } }),

@@ -5,11 +5,14 @@ mod registry;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use crate::{
-    domain::agents::WorkspaceAccess, error::AppResult, runtime::cancellation::CancellationSignal,
+    domain::agents::WorkspaceAccess,
+    error::{AppError, AppResult},
+    runtime::cancellation::CancellationSignal,
 };
 
 pub use codex::CodexProvider;
@@ -54,6 +57,42 @@ pub enum ProviderCapability {
     Shell,
     StructuredOutput,
     ContextCompaction,
+    /// The provider lists its models and runs turns with a chosen model.
+    ModelSelection,
+    /// The provider reports account usage against its rate-limit windows.
+    UsageLimits,
+}
+
+/// A model a provider can run, as reported by the provider's own catalog.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderModel {
+    pub id: String,
+    pub display_name: String,
+    pub description: String,
+    pub is_default: bool,
+    pub reasoning_efforts: Vec<String>,
+    pub default_reasoning_effort: Option<String>,
+}
+
+/// Account usage reported by a provider at `checked_at`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderUsage {
+    pub provider_id: String,
+    pub plan: Option<String>,
+    pub windows: Vec<UsageWindow>,
+    pub limit_reached: bool,
+    pub checked_at: DateTime<Utc>,
+}
+
+/// One rate-limit window, such as a five-hour or weekly allowance.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageWindow {
+    pub duration_minutes: Option<i64>,
+    pub used_percent: u8,
+    pub resets_at: Option<DateTime<Utc>>,
 }
 
 /// One user turn sent to a provider. Providers that keep server-side or local sessions
@@ -64,6 +103,9 @@ pub struct TurnRequest {
     pub prompt: String,
     pub workspace: PathBuf,
     pub access: WorkspaceAccess,
+    /// `None` keeps the provider's default model.
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
 }
 
 /// Progress reported while a turn runs.
@@ -107,4 +149,18 @@ pub trait AgentProvider: Send + Sync {
         events: TurnEvents,
         cancellation: CancellationSignal,
     ) -> AppResult<TurnOutcome>;
+    /// Implemented by providers that declare `ModelSelection`.
+    async fn list_models(&self) -> AppResult<Vec<ProviderModel>> {
+        Err(AppError::Unsupported(format!(
+            "{} does not list models",
+            self.name()
+        )))
+    }
+    /// Implemented by providers that declare `UsageLimits`.
+    async fn read_usage(&self) -> AppResult<ProviderUsage> {
+        Err(AppError::Unsupported(format!(
+            "{} does not report usage limits",
+            self.name()
+        )))
+    }
 }

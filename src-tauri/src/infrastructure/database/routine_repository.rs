@@ -184,6 +184,7 @@ mod tests {
             identity_color: IdentityColor::Violet,
             workspace: "/workspace".into(),
             instructions: String::new(),
+            model_selection: Default::default(),
         })
         .expect("agent");
         SqliteAgentRepository::new(Arc::clone(&database))

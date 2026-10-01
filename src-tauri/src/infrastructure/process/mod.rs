@@ -1,3 +1,4 @@
+mod json_rpc;
 mod line_process;
 
 use async_trait::async_trait;
@@ -7,6 +8,10 @@ use uuid::Uuid;
 
 use crate::error::AppResult;
 
+pub use json_rpc::{
+    JsonRpcError, JsonRpcExit, JsonRpcMessage, JsonRpcProcessClient, JsonRpcSession,
+    TokioJsonRpcProcessClient,
+};
 pub use line_process::{LineCommand, LineProcessExit, LineProcessRunner, TokioLineProcessRunner};
 
 #[derive(Debug, Clone)]

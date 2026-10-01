@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import { AgentAvatar } from "./agent-avatar";
+import { ModelPicker, type ModelChoice } from "./model-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,8 @@ import {
   type NewAgentInput,
   type ProviderSummary
 } from "@/types/domain";
+
+const providerDefault: ModelChoice = { model: null, reasoningEffort: null };
 
 interface NewAgentDialogProps {
   open: boolean;
@@ -22,7 +25,11 @@ interface NewAgentDialogProps {
 export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: NewAgentDialogProps) {
   const [color, setColor] = useState<AgentColor>("indigo");
   const [error, setError] = useState<string>();
+  const [chosenProviderId, setChosenProviderId] = useState<string>();
+  const [modelChoice, setModelChoice] = useState<ModelChoice>(providerDefault);
   if (!open) return null;
+  const providerId = chosenProviderId ?? defaultProvider(providers);
+  const provider = providers.find((candidate) => candidate.id === providerId);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -36,7 +43,9 @@ export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: New
         providerId: formText(data, "providerId") || "mock",
         identityColor: color,
         workspace: formText(data, "workspace"),
-        instructions: formText(data, "instructions")
+        instructions: formText(data, "instructions"),
+        model: modelChoice.model,
+        reasoningEffort: modelChoice.reasoningEffort
       });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The agent could not be created.");
@@ -93,7 +102,11 @@ export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: New
               <select
                 name="providerId"
                 className="field-select"
-                defaultValue={defaultProvider(providers)}
+                value={providerId}
+                onChange={(event) => {
+                  setChosenProviderId(event.target.value);
+                  setModelChoice(providerDefault);
+                }}
               >
                 {providers.map((provider) => (
                   <option
@@ -111,6 +124,12 @@ export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: New
               <Input name="workspace" required placeholder="/path/to/workspace" />
             </Field>
           </div>
+          <ModelPicker
+            provider={provider}
+            model={modelChoice.model}
+            reasoningEffort={modelChoice.reasoningEffort}
+            onChange={setModelChoice}
+          />
           <Field label="Identity color">
             <div className="flex gap-2">
               {agentColors.map((option) => (

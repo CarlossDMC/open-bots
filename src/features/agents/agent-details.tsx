@@ -1,12 +1,24 @@
-import { FolderGit2, Settings2 } from "lucide-react";
+import { Cpu, FolderGit2, Settings2 } from "lucide-react";
+import { useState } from "react";
 import { AgentAvatar } from "./agent-avatar";
 import { AgentMemorySection } from "./agent-memory";
 import { AgentRoutinesSection } from "./agent-routines";
+import { ModelPicker, type ModelChoice } from "./model-picker";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { titleCase } from "@/lib/utils";
-import type { Agent } from "@/types/domain";
+import { updateAgentModel } from "@/lib/desktop-api";
+import { describeModel } from "@/lib/models";
+import { describeError, titleCase } from "@/lib/utils";
+import type { Agent, ProviderSummary } from "@/types/domain";
 
-export function AgentDetails({ agent }: { agent: Agent }) {
+export function AgentDetails({
+  agent,
+  provider,
+  onAgentUpdated
+}: {
+  agent: Agent;
+  provider?: ProviderSummary;
+  onAgentUpdated?: (agent: Agent) => void;
+}) {
   return (
     <div className="animate-fade-in">
       <div className="flex items-center gap-4 border-b border-border-subtle pb-6">
@@ -30,10 +42,8 @@ export function AgentDetails({ agent }: { agent: Agent }) {
         <section className="panel lg:col-span-3">
           <h2 className="section-title">Overview</h2>
           <dl className="detail-grid">
-            <Detail
-              label="Provider"
-              value={agent.providerId === "mock" ? "Mock Provider" : agent.providerId}
-            />
+            <Detail label="Provider" value={provider?.name ?? agent.providerId} />
+            <Detail label="Model" value={describeModel(agent)} />
             <Detail label="Status" value={titleCase(agent.status)} />
             <Detail label="Workspace" value={agent.workspace} />
             <Detail label="Current task" value={agent.currentTask ?? "No active task"} />
@@ -46,6 +56,7 @@ export function AgentDetails({ agent }: { agent: Agent }) {
           <p className="break-all text-sm text-foreground-secondary">{agent.workspace}</p>
           <p className="mt-2 text-xs text-foreground-faint">Local directory workspace</p>
         </section>
+        <AgentModelSection agent={agent} provider={provider} onAgentUpdated={onAgentUpdated} />
         <section className="panel lg:col-span-5">
           <h2 className="section-title">
             <Settings2 size={14} /> Configuration
@@ -88,5 +99,57 @@ function Detail({ label, value }: { label: string; value: string }) {
       <dt className="label">{label}</dt>
       <dd className="mt-1 text-sm text-foreground-secondary">{value}</dd>
     </div>
+  );
+}
+
+/** Saves each change immediately; it applies from the agent's next turn. */
+function AgentModelSection({
+  agent,
+  provider,
+  onAgentUpdated
+}: {
+  agent: Agent;
+  provider?: ProviderSummary;
+  onAgentUpdated?: (agent: Agent) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  const working = agent.status === "working";
+
+  async function save(choice: ModelChoice) {
+    setSaving(true);
+    try {
+      onAgentUpdated?.(await updateAgentModel(agent, choice.model, choice.reasoningEffort));
+      setError(undefined);
+    } catch (caught) {
+      setError(describeError(caught, "The model could not be saved."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="panel lg:col-span-5">
+      <h2 className="section-title">
+        <Cpu size={14} /> Model
+      </h2>
+      <ModelPicker
+        provider={provider}
+        model={agent.model ?? null}
+        reasoningEffort={agent.reasoningEffort ?? null}
+        disabled={saving || working}
+        onChange={(choice) => void save(choice)}
+      />
+      <p className="mt-2 text-xs text-foreground-faint">
+        {working
+          ? "The model can change once the current turn ends."
+          : "Changes apply from the next turn; the conversation continues."}
+      </p>
+      {error && (
+        <p className="mt-2 text-xs text-danger-foreground" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }

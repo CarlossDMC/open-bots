@@ -29,6 +29,12 @@ impl ProviderRegistry {
             .cloned()
             .ok_or_else(|| AppError::NotFound(format!("provider '{id}'")))
     }
+    /// Every registered provider, ordered by name.
+    pub fn all(&self) -> Vec<Arc<dyn AgentProvider>> {
+        let mut providers: Vec<_> = self.providers.values().cloned().collect();
+        providers.sort_by(|left, right| left.name().cmp(right.name()));
+        providers
+    }
     pub async fn detect_all(&self) -> Vec<ProviderSummary> {
         let mut results = Vec::with_capacity(self.providers.len());
         for provider in self.providers.values() {

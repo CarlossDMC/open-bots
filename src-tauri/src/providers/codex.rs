@@ -7,40 +7,128 @@
 //! - Follow-up:   `codex exec resume --json --skip-git-repo-check -c sandbox_mode="<mode>" <id> -`
 //!   (`resume` accepts neither `--sandbox` nor `-C`, so the sandbox is set through the
 //!   documented `sandbox_mode` config key and the workspace through the process directory.)
+//! - Model: `-m <model>` on both commands; reasoning effort through the documented
+//!   `model_reasoning_effort` config key (`-c model_reasoning_effort="<effort>"`).
 //! - The prompt is read from stdin (`-`) so it never appears in a command line.
 //! - `--json` prints JSONL events: `thread.started` carries the session id, `item.*` events
 //!   describe agent messages and actions, and `turn.failed` / `error` report failures.
 //!
+//! Models and usage limits come from `codex app-server` (stdio JSON-RPC, marked experimental by
+//! the CLI): `initialize`, the `initialized` notification, then `model/list` or
+//! `account/rateLimits/read`. The server is started per read and stopped afterwards; turns
+//! never go through it. Parsing tolerates missing fields so newer CLI versions degrade to an
+//! error instead of wrong numbers.
+//!
 //! Detection runs `codex --version` and `codex login status`; their output is never logged.
 //! Authentication stays with the CLI; Open Bots never reads Codex credentials.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use serde_json::Value;
+use chrono::{DateTime, Utc};
+use serde_json::{json, Value};
 
 use super::{
-    AgentProvider, DetectionStatus, ProviderCapability, ProviderKind, ProviderSummary, TurnEvent,
-    TurnEvents, TurnOutcome, TurnRequest,
+    AgentProvider, DetectionStatus, ProviderCapability, ProviderKind, ProviderModel,
+    ProviderSummary, ProviderUsage, TurnEvent, TurnEvents, TurnOutcome, TurnRequest, UsageWindow,
 };
 use crate::{
     domain::agents::WorkspaceAccess,
     error::{AppError, AppResult},
-    infrastructure::process::{LineCommand, LineProcessExit, LineProcessRunner},
+    infrastructure::process::{
+        JsonRpcError, JsonRpcExit, JsonRpcMessage, JsonRpcProcessClient, JsonRpcSession,
+        LineCommand, LineProcessExit, LineProcessRunner,
+    },
     runtime::cancellation::CancellationSignal,
 };
 
 const PROGRAM: &str = "codex";
 /// Longest stderr excerpt included in a user-visible error.
 const MAX_ERROR_EXCERPT: usize = 300;
+/// How long one app-server read may take, including server start-up.
+const APP_SERVER_TIMEOUT: Duration = Duration::from_secs(15);
+/// Upper bound on `model/list` pages, so a misbehaving cursor cannot loop forever.
+const MAX_MODEL_PAGES: usize = 5;
 
 pub struct CodexProvider {
     runner: Arc<dyn LineProcessRunner>,
+    rpc: Arc<dyn JsonRpcProcessClient>,
 }
 
 impl CodexProvider {
-    pub fn new(runner: Arc<dyn LineProcessRunner>) -> Self {
-        Self { runner }
+    pub fn new(runner: Arc<dyn LineProcessRunner>, rpc: Arc<dyn JsonRpcProcessClient>) -> Self {
+        Self { runner, rpc }
+    }
+
+    /// Sends one request to a fresh `codex app-server` and returns its result.
+    async fn app_server_request(&self, method: &str, params: Option<Value>) -> AppResult<Value> {
+        let exit = self
+            .rpc
+            .exchange(JsonRpcSession {
+                program: PROGRAM.into(),
+                arguments: vec!["app-server".into()],
+                messages: vec![
+                    JsonRpcMessage::Request {
+                        method: "initialize".into(),
+                        params: Some(json!({
+                            "clientInfo": {
+                                "name": "open-bots",
+                                "title": "Open Bots",
+                                "version": env!("CARGO_PKG_VERSION"),
+                            }
+                        })),
+                    },
+                    JsonRpcMessage::Notification {
+                        method: "initialized".into(),
+                        params: None,
+                    },
+                    JsonRpcMessage::Request {
+                        method: method.into(),
+                        params,
+                    },
+                ],
+                timeout: APP_SERVER_TIMEOUT,
+            })
+            .await?;
+        match exit {
+            JsonRpcExit::Completed(responses) => {
+                let mut responses = responses.into_iter();
+                let failure = |error: JsonRpcError| {
+                    AppError::Provider(format!(
+                        "Codex app-server rejected `{method}`: {}",
+                        error.message
+                    ))
+                };
+                responses
+                    .next()
+                    .ok_or_else(|| {
+                        AppError::Provider("Codex app-server did not initialize".into())
+                    })?
+                    .map_err(failure)?;
+                responses
+                    .next()
+                    .ok_or_else(|| {
+                        AppError::Provider(format!("Codex app-server did not answer `{method}`"))
+                    })?
+                    .map_err(failure)
+            }
+            JsonRpcExit::ProgramNotFound => Err(AppError::Provider(
+                "the `codex` command was not found on PATH".into(),
+            )),
+            JsonRpcExit::TimedOut => Err(AppError::Provider(format!(
+                "Codex app-server did not answer within {} seconds",
+                APP_SERVER_TIMEOUT.as_secs()
+            ))),
+            JsonRpcExit::Exited { code, stderr_tail } => {
+                let code = code.map_or_else(|| "a signal".into(), |code| code.to_string());
+                let excerpt = error_excerpt(&stderr_tail);
+                Err(AppError::Provider(if excerpt.is_empty() {
+                    format!("Codex app-server exited with {code}")
+                } else {
+                    format!("Codex app-server exited with {code}: {excerpt}")
+                }))
+            }
+        }
     }
 
     async fn run_quiet(&self, arguments: &[&str]) -> AppResult<(LineProcessExit, Vec<String>)> {
@@ -121,7 +209,36 @@ impl AgentProvider for CodexProvider {
             ProviderCapability::Sessions,
             ProviderCapability::Resume,
             ProviderCapability::Shell,
+            ProviderCapability::ModelSelection,
+            ProviderCapability::UsageLimits,
         ]
+    }
+
+    async fn list_models(&self) -> AppResult<Vec<ProviderModel>> {
+        let mut models = Vec::new();
+        let mut cursor: Option<String> = None;
+        for _ in 0..MAX_MODEL_PAGES {
+            let page = self
+                .app_server_request(
+                    "model/list",
+                    Some(json!({ "includeHidden": false, "cursor": cursor })),
+                )
+                .await?;
+            let (page_models, next) = parse_model_page(&page)?;
+            models.extend(page_models);
+            match next {
+                Some(next) => cursor = Some(next),
+                None => break,
+            }
+        }
+        Ok(models)
+    }
+
+    async fn read_usage(&self) -> AppResult<ProviderUsage> {
+        let result = self
+            .app_server_request("account/rateLimits/read", None)
+            .await?;
+        parse_usage(self.id(), &result, Utc::now())
     }
 
     async fn run_turn(
@@ -194,28 +311,38 @@ fn sandbox_mode(access: WorkspaceAccess) -> &'static str {
 
 fn turn_command(request: &TurnRequest) -> LineCommand {
     let mode = sandbox_mode(request.access);
-    let arguments: Vec<String> = match &request.session_id {
+    let mut arguments: Vec<String> = match &request.session_id {
         None => vec![
             "exec".into(),
             "--json".into(),
             "--skip-git-repo-check".into(),
             "--sandbox".into(),
             mode.into(),
-            "-C".into(),
-            request.workspace.to_string_lossy().into_owned(),
-            "-".into(),
         ],
-        Some(session_id) => vec![
+        Some(_) => vec![
             "exec".into(),
             "resume".into(),
             "--json".into(),
             "--skip-git-repo-check".into(),
             "-c".into(),
             format!("sandbox_mode=\"{mode}\""),
-            session_id.clone(),
-            "-".into(),
         ],
     };
+    // Identifiers are validated by the domain, so they cannot break out of the TOML string.
+    if let Some(model) = &request.model {
+        arguments.extend(["-m".into(), model.clone()]);
+    }
+    if let Some(effort) = &request.reasoning_effort {
+        arguments.extend(["-c".into(), format!("model_reasoning_effort=\"{effort}\"")]);
+    }
+    match &request.session_id {
+        None => arguments.extend([
+            "-C".into(),
+            request.workspace.to_string_lossy().into_owned(),
+        ]),
+        Some(session_id) => arguments.push(session_id.clone()),
+    }
+    arguments.push("-".into());
     LineCommand {
         program: PROGRAM.into(),
         arguments,
@@ -292,6 +419,87 @@ fn action_succeeded(item: &Value) -> bool {
     status_ok && exit_ok
 }
 
+/// Maps one `model/list` page to visible models and the next cursor.
+fn parse_model_page(page: &Value) -> AppResult<(Vec<ProviderModel>, Option<String>)> {
+    let entries = page
+        .get("data")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AppError::Provider("Codex returned an unexpected model list".into()))?;
+    let text = |value: &Value, key: &str| value.get(key).and_then(Value::as_str).map(str::to_owned);
+    let models = entries
+        .iter()
+        .filter(|entry| {
+            !entry
+                .get("hidden")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .filter_map(|entry| {
+            let id = text(entry, "model").or_else(|| text(entry, "id"))?;
+            Some(ProviderModel {
+                display_name: text(entry, "displayName").unwrap_or_else(|| id.clone()),
+                description: text(entry, "description").unwrap_or_default(),
+                is_default: entry
+                    .get("isDefault")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                reasoning_efforts: entry
+                    .get("supportedReasoningEfforts")
+                    .and_then(Value::as_array)
+                    .map(|efforts| {
+                        efforts
+                            .iter()
+                            .filter_map(|effort| text(effort, "reasoningEffort"))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                default_reasoning_effort: text(entry, "defaultReasoningEffort"),
+                id,
+            })
+        })
+        .collect();
+    Ok((models, text(page, "nextCursor")))
+}
+
+/// Maps `account/rateLimits/read` to provider-neutral usage windows.
+fn parse_usage(
+    provider_id: &str,
+    result: &Value,
+    checked_at: DateTime<Utc>,
+) -> AppResult<ProviderUsage> {
+    let snapshot = result
+        .get("rateLimits")
+        .filter(|snapshot| snapshot.is_object())
+        .ok_or_else(|| AppError::Provider("Codex did not report usage limits".into()))?;
+    let windows = ["primary", "secondary"]
+        .into_iter()
+        .filter_map(|key| snapshot.get(key).filter(|window| window.is_object()))
+        .filter_map(|window| {
+            let used = window.get("usedPercent").and_then(Value::as_i64)?;
+            Some(UsageWindow {
+                duration_minutes: window.get("windowDurationMins").and_then(Value::as_i64),
+                used_percent: u8::try_from(used.clamp(0, 100)).unwrap_or(100),
+                resets_at: window
+                    .get("resetsAt")
+                    .and_then(Value::as_i64)
+                    .and_then(|seconds| DateTime::from_timestamp(seconds, 0)),
+            })
+        })
+        .collect();
+    let reached = |value: Option<&Value>| value.is_some_and(|value| !value.is_null());
+    Ok(ProviderUsage {
+        provider_id: provider_id.into(),
+        plan: snapshot
+            .get("planType")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        windows,
+        limit_reached: reached(snapshot.get("rateLimitReachedType"))
+            || result.get("ordinaryUsageAllowed").and_then(Value::as_bool) == Some(false),
+        checked_at,
+    })
+}
+
 fn error_excerpt(stderr: &str) -> String {
     let line = stderr
         .lines()
@@ -341,6 +549,41 @@ mod tests {
         }
     }
 
+    /// Returns one scripted app-server exit and records every session it receives.
+    struct ScriptedRpc {
+        exit: JsonRpcExit,
+        sessions: Mutex<Vec<JsonRpcSession>>,
+    }
+
+    impl ScriptedRpc {
+        fn new(exit: JsonRpcExit) -> Arc<Self> {
+            Arc::new(Self {
+                exit,
+                sessions: Mutex::new(Vec::new()),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl JsonRpcProcessClient for ScriptedRpc {
+        async fn exchange(&self, session: JsonRpcSession) -> AppResult<JsonRpcExit> {
+            self.sessions.lock().expect("sessions").push(session);
+            Ok(self.exit.clone())
+        }
+    }
+
+    fn codex(runner: Arc<ScriptedRunner>) -> CodexProvider {
+        CodexProvider::new(runner, ScriptedRpc::new(JsonRpcExit::TimedOut))
+    }
+
+    fn codex_rpc(rpc: Arc<ScriptedRpc>) -> CodexProvider {
+        CodexProvider::new(ScriptedRunner::new(Vec::new(), finished(true)), rpc)
+    }
+
+    fn answered(result: Value) -> JsonRpcExit {
+        JsonRpcExit::Completed(vec![Ok(json!({})), Ok(result)])
+    }
+
     fn finished(success: bool) -> LineProcessExit {
         LineProcessExit::Finished {
             success,
@@ -355,6 +598,8 @@ mod tests {
             prompt: "List the files".into(),
             workspace: "/work/project".into(),
             access,
+            model: None,
+            reasoning_effort: None,
         }
     }
 
@@ -467,7 +712,7 @@ mod tests {
             ],
             finished(true),
         );
-        let provider = CodexProvider::new(runner.clone());
+        let provider = codex(runner.clone());
         let (sender, mut receiver) = mpsc::unbounded_channel();
 
         let outcome = provider
@@ -504,7 +749,7 @@ mod tests {
             vec![r#"{"type":"turn.failed","error":{"message":"usage limit reached"}}"#],
             finished(false),
         );
-        let result = CodexProvider::new(failed)
+        let result = codex(failed)
             .run_turn(
                 request(None, WorkspaceAccess::ReadOnly),
                 mpsc::unbounded_channel().0,
@@ -523,7 +768,7 @@ mod tests {
                 stderr_tail: "warning\nerror: not logged in\n".into(),
             },
         );
-        let result = CodexProvider::new(crashed)
+        let result = codex(crashed)
             .run_turn(
                 request(Some("thread-1"), WorkspaceAccess::ReadOnly),
                 mpsc::unbounded_channel().0,
@@ -538,7 +783,7 @@ mod tests {
     #[tokio::test]
     async fn reports_cancelled_turns() {
         let runner = ScriptedRunner::new(Vec::new(), LineProcessExit::Cancelled);
-        let outcome = CodexProvider::new(runner)
+        let outcome = codex(runner)
             .run_turn(
                 request(Some("thread-1"), WorkspaceAccess::ReadOnly),
                 mpsc::unbounded_channel().0,
@@ -553,18 +798,189 @@ mod tests {
     #[tokio::test]
     async fn detects_installation_and_sign_in() {
         let missing = ScriptedRunner::new(Vec::new(), LineProcessExit::ProgramNotFound);
-        let summary = CodexProvider::new(missing).detect().await.expect("detect");
+        let summary = codex(missing).detect().await.expect("detect");
         assert_eq!(summary.status, DetectionStatus::NotInstalled);
 
         let installed = ScriptedRunner::new(vec!["codex-cli 0.159.2"], finished(true));
-        let summary = CodexProvider::new(installed.clone())
-            .detect()
-            .await
-            .expect("detect");
+        let summary = codex(installed.clone()).detect().await.expect("detect");
         assert_eq!(summary.status, DetectionStatus::Available);
         assert!(summary.detail.starts_with("codex-cli 0.159.2"));
         let commands = installed.commands.lock().expect("commands");
         assert_eq!(commands[0].arguments, ["--version"]);
         assert_eq!(commands[1].arguments, ["login", "status"]);
+    }
+
+    #[test]
+    fn passes_the_selected_model_to_new_and_resumed_sessions() {
+        let mut new_session = request(None, WorkspaceAccess::ReadOnly);
+        new_session.model = Some("gpt-5.5".into());
+        new_session.reasoning_effort = Some("high".into());
+        assert_eq!(
+            turn_command(&new_session).arguments,
+            [
+                "exec",
+                "--json",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "read-only",
+                "-m",
+                "gpt-5.5",
+                "-c",
+                "model_reasoning_effort=\"high\"",
+                "-C",
+                "/work/project",
+                "-"
+            ]
+        );
+
+        let mut resumed = request(Some("thread-1"), WorkspaceAccess::ReadOnly);
+        resumed.model = Some("gpt-5.5".into());
+        assert_eq!(
+            turn_command(&resumed).arguments,
+            [
+                "exec",
+                "resume",
+                "--json",
+                "--skip-git-repo-check",
+                "-c",
+                "sandbox_mode=\"read-only\"",
+                "-m",
+                "gpt-5.5",
+                "thread-1",
+                "-"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn lists_visible_models_from_the_app_server() {
+        let rpc = ScriptedRpc::new(answered(json!({
+            "data": [
+                {
+                    "id": "gpt-5.5",
+                    "model": "gpt-5.5",
+                    "displayName": "GPT-5.5",
+                    "description": "Legacy coding model.",
+                    "isDefault": true,
+                    "hidden": false,
+                    "supportedReasoningEfforts": [
+                        { "reasoningEffort": "low", "description": "Fast" },
+                        { "reasoningEffort": "high", "description": "Deep" }
+                    ],
+                    "defaultReasoningEffort": "low"
+                },
+                { "id": "internal", "model": "internal", "hidden": true },
+                { "id": "bare" }
+            ],
+            "nextCursor": null
+        })));
+        let models = codex_rpc(rpc.clone()).list_models().await.expect("models");
+        assert_eq!(
+            models,
+            [
+                ProviderModel {
+                    id: "gpt-5.5".into(),
+                    display_name: "GPT-5.5".into(),
+                    description: "Legacy coding model.".into(),
+                    is_default: true,
+                    reasoning_efforts: vec!["low".into(), "high".into()],
+                    default_reasoning_effort: Some("low".into()),
+                },
+                ProviderModel {
+                    id: "bare".into(),
+                    display_name: "bare".into(),
+                    description: String::new(),
+                    is_default: false,
+                    reasoning_efforts: Vec::new(),
+                    default_reasoning_effort: None,
+                }
+            ]
+        );
+        let sessions = rpc.sessions.lock().expect("sessions");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].program, "codex");
+        assert_eq!(sessions[0].arguments, ["app-server"]);
+        let methods: Vec<_> = sessions[0]
+            .messages
+            .iter()
+            .map(|message| match message {
+                JsonRpcMessage::Request { method, .. } => method.as_str(),
+                JsonRpcMessage::Notification { method, .. } => method.as_str(),
+            })
+            .collect();
+        assert_eq!(methods, ["initialize", "initialized", "model/list"]);
+    }
+
+    #[tokio::test]
+    async fn reads_usage_windows_from_the_app_server() {
+        let rpc = ScriptedRpc::new(answered(json!({
+            "ordinaryUsageAllowed": true,
+            "rateLimits": {
+                "limitId": "codex",
+                "primary": { "usedPercent": 2, "windowDurationMins": 300, "resetsAt": 1790880511 },
+                "secondary": { "usedPercent": 130, "windowDurationMins": 10080, "resetsAt": null },
+                "planType": "plus",
+                "rateLimitReachedType": null
+            }
+        })));
+        let usage = codex_rpc(rpc).read_usage().await.expect("usage");
+        assert_eq!(usage.provider_id, "codex");
+        assert_eq!(usage.plan.as_deref(), Some("plus"));
+        assert!(!usage.limit_reached);
+        assert_eq!(
+            usage.windows,
+            [
+                UsageWindow {
+                    duration_minutes: Some(300),
+                    used_percent: 2,
+                    resets_at: DateTime::from_timestamp(1_790_880_511, 0),
+                },
+                UsageWindow {
+                    duration_minutes: Some(10080),
+                    used_percent: 100,
+                    resets_at: None,
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn flags_reached_limits_and_rejects_missing_snapshots() {
+        let now = Utc::now();
+        let reached = parse_usage(
+            "codex",
+            &json!({ "rateLimits": { "primary": null, "rateLimitReachedType": "rate_limit_reached" } }),
+            now,
+        )
+        .expect("usage");
+        assert!(reached.limit_reached);
+        assert!(reached.windows.is_empty());
+        assert!(parse_usage("codex", &json!({}), now).is_err());
+    }
+
+    #[tokio::test]
+    async fn reports_app_server_failures() {
+        let rejected = ScriptedRpc::new(JsonRpcExit::Completed(vec![
+            Ok(json!({})),
+            Err(JsonRpcError {
+                code: -32600,
+                message: "not signed in with ChatGPT".into(),
+            }),
+        ]));
+        let result = codex_rpc(rejected).read_usage().await;
+        assert!(matches!(
+            result,
+            Err(AppError::Provider(message))
+                if message == "Codex app-server rejected `account/rateLimits/read`: not signed in with ChatGPT"
+        ));
+
+        let missing = ScriptedRpc::new(JsonRpcExit::ProgramNotFound);
+        assert!(codex_rpc(missing).list_models().await.is_err());
+
+        let timed_out = ScriptedRpc::new(JsonRpcExit::TimedOut);
+        assert!(matches!(
+            codex_rpc(timed_out).read_usage().await,
+            Err(AppError::Provider(message)) if message.contains("did not answer")
+        ));
     }
 }

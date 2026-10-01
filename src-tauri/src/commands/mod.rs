@@ -2,6 +2,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::{
+    application::ProviderUsageReport,
     domain::{
         agents::{Agent, NewAgent},
         approvals::{ApprovalRequest, ApprovalStatus},
@@ -11,7 +12,7 @@ use crate::{
         routines::{NewRoutine, Routine},
     },
     error::AppResult,
-    providers::ProviderSummary,
+    providers::{ProviderModel, ProviderSummary},
     AppState,
 };
 
@@ -23,6 +24,31 @@ pub fn list_agents(state: State<'_, AppState>) -> AppResult<Vec<Agent>> {
 #[tauri::command]
 pub fn create_agent(input: NewAgent, state: State<'_, AppState>) -> AppResult<Agent> {
     state.agents.create(input)
+}
+
+#[tauri::command]
+pub fn update_agent_model(
+    agent_id: Uuid,
+    model: Option<String>,
+    reasoning_effort: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Agent> {
+    state.agents.update_model(agent_id, model, reasoning_effort)
+}
+
+#[tauri::command]
+pub async fn list_provider_models(
+    provider_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<ProviderModel>> {
+    state.provider_catalog.list_models(&provider_id).await
+}
+
+#[tauri::command]
+pub async fn read_provider_usage(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<ProviderUsageReport>> {
+    Ok(state.provider_catalog.read_all_usage().await)
 }
 
 #[tauri::command]

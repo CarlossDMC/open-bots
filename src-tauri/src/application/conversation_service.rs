@@ -191,6 +191,8 @@ impl ConversationService {
             prompt,
             workspace: PathBuf::from(&agent.workspace),
             access: agent.permissions.workspace_access(),
+            model: agent.model_selection.model().map(str::to_owned),
+            reasoning_effort: agent.model_selection.reasoning_effort().map(str::to_owned),
         };
         let (sender, mut receiver) = mpsc::unbounded_channel();
         let drain = async {

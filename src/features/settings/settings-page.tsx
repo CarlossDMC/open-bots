@@ -1,18 +1,22 @@
-import { Bell, Database, Download, Monitor, Puzzle, SlidersHorizontal } from "lucide-react";
+import { Bell, Database, Download, Gauge, Monitor, Puzzle, SlidersHorizontal } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ThemeSelector } from "@/features/appearance/theme-selector";
+import { ProviderUsageList } from "@/features/providers/provider-usage";
 import { NotificationSettings } from "@/features/settings/notification-settings";
 import { UpdateSettings } from "@/features/updates/update-settings";
 import type { AppUpdater } from "@/hooks/use-app-updater";
 import type { Notifications } from "@/hooks/use-notifications";
+import type { ProviderUsageState } from "@/hooks/use-provider-usage";
 import type { ProviderSummary } from "@/types/domain";
 
 export function SettingsPage({
   providers,
+  usage,
   updater,
   notifications
 }: {
   providers: ProviderSummary[];
+  usage: ProviderUsageState;
   updater: AppUpdater;
   notifications: Notifications;
 }) {
@@ -54,6 +58,9 @@ export function SettingsPage({
               </div>
             ))}
           </div>
+        </SettingsCard>
+        <SettingsCard icon={Gauge} title="Usage limits">
+          <ProviderUsageList usage={usage} showRefresh />
         </SettingsCard>
         <SettingsCard icon={Monitor} title="Appearance">
           <Row name="Theme" value={<ThemeSelector />} />

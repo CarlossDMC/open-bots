@@ -17,6 +17,8 @@ pub struct DomainEvent {
 pub enum EventType {
     #[serde(rename = "agent.created")]
     AgentCreated,
+    #[serde(rename = "agent.updated")]
+    AgentUpdated,
     #[serde(rename = "agent.started")]
     AgentStarted,
     #[serde(rename = "agent.paused")]

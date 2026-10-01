@@ -23,6 +23,9 @@ export interface Agent {
   status: AgentStatus;
   instructions: string;
   permissions: AgentPermissions;
+  /** `null` keeps the provider's default model. */
+  model?: string | null;
+  reasoningEffort?: string | null;
   currentTask?: string;
   createdAt: string;
   updatedAt: string;
@@ -44,6 +47,8 @@ export interface NewAgentInput {
   identityColor: AgentColor;
   workspace: string;
   instructions: string;
+  model?: string | null;
+  reasoningEffort?: string | null;
 }
 
 export type TaskStatus =
@@ -106,6 +111,43 @@ export interface ProviderSummary {
   status: "available" | "not-installed" | "unknown";
   detail: string;
   capabilities: string[];
+}
+
+/** Capabilities that unlock model and usage features; mirrors `ProviderCapability`. */
+export const providerCapabilities = {
+  modelSelection: "model_selection",
+  usageLimits: "usage_limits"
+} as const;
+
+export interface ProviderModel {
+  id: string;
+  displayName: string;
+  description: string;
+  isDefault: boolean;
+  reasoningEfforts: string[];
+  defaultReasoningEffort?: string | null;
+}
+
+export interface UsageWindow {
+  durationMinutes?: number | null;
+  usedPercent: number;
+  resetsAt?: string | null;
+}
+
+export interface ProviderUsage {
+  providerId: string;
+  plan?: string | null;
+  windows: UsageWindow[];
+  limitReached: boolean;
+  checkedAt: string;
+}
+
+/** Usage for one provider, or the reason it could not be read. */
+export interface ProviderUsageReport {
+  providerId: string;
+  providerName: string;
+  usage?: ProviderUsage | null;
+  error?: string | null;
 }
 
 export type RoutineSchedule =

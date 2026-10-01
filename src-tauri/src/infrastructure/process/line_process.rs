@@ -141,7 +141,7 @@ impl LineProcessRunner for TokioLineProcessRunner {
     }
 }
 
-async fn read_tail(mut stderr: tokio::process::ChildStderr) -> String {
+pub(super) async fn read_tail(mut stderr: tokio::process::ChildStderr) -> String {
     let mut tail = Vec::new();
     let mut buffer = [0_u8; 1024];
     loop {

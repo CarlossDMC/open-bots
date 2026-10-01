@@ -4,6 +4,7 @@ mod approval_service;
 mod conversation_prompt;
 mod conversation_service;
 mod memory_service;
+mod provider_service;
 mod routine_scheduler;
 mod routine_service;
 
@@ -12,5 +13,6 @@ pub use agent_service::AgentService;
 pub use approval_service::ApprovalService;
 pub use conversation_service::{ConversationService, CONVERSATION_HISTORY_LIMIT};
 pub use memory_service::MemoryService;
+pub use provider_service::{ProviderService, ProviderUsageReport};
 pub use routine_scheduler::{run_routine_scheduler, MAX_SCHEDULER_WAIT};
 pub use routine_service::RoutineService;
