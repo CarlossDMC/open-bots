@@ -42,12 +42,8 @@
   .detail-grid {
     @apply grid grid-cols-2 gap-x-8 gap-y-5;
   }
-  .field-textarea,
-  .field-select {
+  .field-textarea {
     @apply w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground outline-none placeholder:text-foreground-faint focus:border-border-strong focus:ring-1 focus:ring-ring/40;
-  }
-  .field-select {
-    @apply h-9 py-0;
   }
   .table-shell {
     @apply overflow-hidden rounded-lg border border-border/80;

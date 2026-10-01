@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ModelPicker } from "./model-picker";
 import { resetProviderModelCache } from "@/hooks/use-provider-models";
@@ -54,10 +54,16 @@ describe("ModelPicker", () => {
     render(
       <ModelPicker provider={codex} model={null} reasoningEffort={null} onChange={onChange} />
     );
-    expect(await screen.findByRole("option", { name: "GPT-5.5 (default)" })).toBeTruthy();
-    expect(screen.getByLabelText("Reasoning").hasAttribute("disabled")).toBe(true);
+    const modelBox = screen.getByRole("combobox", { name: "Model" });
+    await waitFor(() => expect(modelBox.hasAttribute("disabled")).toBe(false));
+    expect(screen.getByRole("combobox", { name: "Reasoning" }).hasAttribute("disabled")).toBe(true);
 
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "gpt-5.5" } });
+    fireEvent.click(modelBox);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "5.5" } });
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "GPT-5.5 (default)"
+    ]);
+    fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Enter" });
     expect(onChange).toHaveBeenCalledWith({ model: "gpt-5.5", reasoningEffort: null });
   });
 
@@ -66,8 +72,10 @@ describe("ModelPicker", () => {
     render(
       <ModelPicker provider={codex} model="gpt-5.5" reasoningEffort={null} onChange={onChange} />
     );
-    expect(await screen.findByRole("option", { name: "Model default (low)" })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Reasoning"), { target: { value: "high" } });
+    const effortBox = screen.getByRole("combobox", { name: "Reasoning" });
+    await waitFor(() => expect(effortBox.textContent).toBe("Model default (low)"));
+    fireEvent.click(effortBox);
+    fireEvent.click(screen.getByRole("option", { name: "high" }));
     expect(onChange).toHaveBeenCalledWith({ model: "gpt-5.5", reasoningEffort: "high" });
   });
 

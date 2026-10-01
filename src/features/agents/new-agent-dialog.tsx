@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { AgentAvatar } from "./agent-avatar";
 import { ModelPicker, type ModelChoice } from "./model-picker";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
@@ -40,7 +41,7 @@ export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: New
         name: formText(data, "name"),
         role: formText(data, "role"),
         description: formText(data, "description"),
-        providerId: formText(data, "providerId") || "mock",
+        providerId: providerId || "mock",
         identityColor: color,
         workspace: formText(data, "workspace"),
         instructions: formText(data, "instructions"),
@@ -99,26 +100,22 @@ export function NewAgentDialog({ open, busy, providers, onClose, onSubmit }: New
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Provider">
-              <select
-                name="providerId"
-                className="field-select"
+              <Combobox
+                aria-label="Provider"
                 value={providerId}
-                onChange={(event) => {
-                  setChosenProviderId(event.target.value);
+                searchPlaceholder="Search providers…"
+                options={providers.map((provider) => ({
+                  value: provider.id,
+                  label: provider.name,
+                  description:
+                    provider.status === "available" ? undefined : providerStatusLabel(provider),
+                  disabled: provider.status === "not-installed"
+                }))}
+                onChange={(value) => {
+                  setChosenProviderId(value);
                   setModelChoice(providerDefault);
                 }}
-              >
-                {providers.map((provider) => (
-                  <option
-                    key={provider.id}
-                    value={provider.id}
-                    disabled={provider.status === "not-installed"}
-                  >
-                    {provider.name}
-                    {provider.status === "available" ? "" : ` (${providerStatusLabel(provider)})`}
-                  </option>
-                ))}
-              </select>
+              />
             </Field>
             <Field label="Workspace">
               <Input name="workspace" required placeholder="/path/to/workspace" />
@@ -208,5 +205,5 @@ function defaultProvider(providers: ProviderSummary[]): string {
 }
 
 function providerStatusLabel(provider: ProviderSummary): string {
-  return provider.status === "not-installed" ? "not installed" : "sign-in unconfirmed";
+  return provider.status === "not-installed" ? "Not installed" : "Sign-in unconfirmed";
 }

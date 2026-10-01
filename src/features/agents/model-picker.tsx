@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { useProviderModels } from "@/hooks/use-provider-models";
 import { supportsModelSelection } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,29 @@ export function ModelPicker({
   const selected = catalog.models.find((candidate) => candidate.id === model);
   const efforts = selected?.reasoningEfforts ?? [];
   const busy = disabled || catalog.loading;
+  const modelOptions: ComboboxOption[] = [
+    { value: "", label: catalog.loading ? "Loading models…" : "Provider default" },
+    ...catalog.models.map((candidate) => ({
+      value: candidate.id,
+      label: candidate.isDefault ? `${candidate.displayName} (default)` : candidate.displayName,
+      description: candidate.description || undefined
+    })),
+    ...(model && !catalog.loading && !selected
+      ? [{ value: model, label: `${model} (not in catalog)` }]
+      : [])
+  ];
+  const effortOptions: ComboboxOption[] = [
+    {
+      value: "",
+      label: selected?.defaultReasoningEffort
+        ? `Model default (${selected.defaultReasoningEffort})`
+        : "Model default"
+    },
+    ...efforts.map((effort) => ({ value: effort, label: effort })),
+    ...(reasoningEffort && !efforts.includes(reasoningEffort)
+      ? [{ value: reasoningEffort, label: reasoningEffort }]
+      : [])
+  ];
 
   return (
     <div className={cn("grid grid-cols-2 gap-4", className)}>
@@ -49,26 +73,14 @@ export function ModelPicker({
         <label className="mb-1.5 block text-xs font-medium text-foreground-muted" htmlFor={modelId}>
           Model
         </label>
-        <select
+        <Combobox
           id={modelId}
-          className="field-select"
           value={model ?? ""}
           disabled={busy}
-          onChange={(event) =>
-            onChange({ model: event.target.value || null, reasoningEffort: null })
-          }
-        >
-          <option value="">{catalog.loading ? "Loading models…" : "Provider default"}</option>
-          {catalog.models.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              {candidate.displayName}
-              {candidate.isDefault ? " (default)" : ""}
-            </option>
-          ))}
-          {model && !catalog.loading && !selected && (
-            <option value={model}>{model} (not in catalog)</option>
-          )}
-        </select>
+          searchPlaceholder="Search models…"
+          options={modelOptions}
+          onChange={(value) => onChange({ model: value || null, reasoningEffort: null })}
+        />
       </div>
       <div>
         <label
@@ -77,27 +89,14 @@ export function ModelPicker({
         >
           Reasoning
         </label>
-        <select
+        <Combobox
           id={effortId}
-          className="field-select"
           value={reasoningEffort ?? ""}
           disabled={busy || !model}
-          onChange={(event) => onChange({ model, reasoningEffort: event.target.value || null })}
-        >
-          <option value="">
-            {selected?.defaultReasoningEffort
-              ? `Model default (${selected.defaultReasoningEffort})`
-              : "Model default"}
-          </option>
-          {efforts.map((effort) => (
-            <option key={effort} value={effort}>
-              {effort}
-            </option>
-          ))}
-          {reasoningEffort && !efforts.includes(reasoningEffort) && (
-            <option value={reasoningEffort}>{reasoningEffort}</option>
-          )}
-        </select>
+          searchPlaceholder="Search efforts…"
+          options={effortOptions}
+          onChange={(value) => onChange({ model, reasoningEffort: value || null })}
+        />
       </div>
       {catalog.error && (
         <p className="col-span-2 text-xs text-danger-foreground" role="alert">

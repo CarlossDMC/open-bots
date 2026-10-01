@@ -1,6 +1,7 @@
 import { CalendarClock, Loader2, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { useAgentRoutines } from "@/hooks/use-agent-routines";
 import { useRuntimeEvents } from "@/hooks/use-runtime-events";
@@ -15,8 +16,10 @@ import {
 } from "@/lib/routines";
 import { formatRelativeTime } from "@/lib/utils";
 
-const selectClassName =
-  "h-9 rounded-md border border-border bg-card px-2 text-sm text-foreground outline-none focus:border-border-strong focus:ring-1 focus:ring-ring/40";
+const scheduleOptions: ComboboxOption[] = [
+  { value: "daily", label: "Daily at" },
+  { value: "interval", label: "Every (minutes)" }
+];
 
 export function AgentRoutinesSection({ agentId }: { agentId: string }) {
   const { routines, available, loading, error, create, setEnabled, remove, reload } =
@@ -87,16 +90,15 @@ export function AgentRoutinesSection({ agentId }: { agentId: string }) {
           />
         </div>
         <div className="flex items-center gap-2">
-          <select
+          <Combobox
             aria-label="Schedule type"
-            className={selectClassName}
+            className="w-44 shrink-0"
             value={kind}
             disabled={!available}
-            onChange={(event) => setKind(event.target.value as ScheduleKind)}
-          >
-            <option value="daily">Daily at</option>
-            <option value="interval">Every (minutes)</option>
-          </select>
+            searchPlaceholder="Search schedules…"
+            options={scheduleOptions}
+            onChange={(value) => setKind(value as ScheduleKind)}
+          />
           {kind === "daily" ? (
             <Input
               aria-label="Daily time"
